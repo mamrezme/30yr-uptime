@@ -4,6 +4,8 @@ import {
   COOLDOWN_MS,
   afterHandled,
   afterNudge,
+  afterSnooze,
+  SNOOZE_MS,
   decide,
   initialState,
   turnEnded,
@@ -80,4 +82,25 @@ test('only the end of the started turn clears it', () => {
   expect(s.turn?.id).toBe('main')
   s = turnEnded(s, 'main')
   expect(s.turn).toBe(null)
+})
+
+test('a snoozed break comes back after 5 minutes, and nothing else shows meanwhile', () => {
+  // Snoozed during a long turn that has not been nudged: neither the turn
+  // rule nor the interval may slip a different break in.
+  let s = turnStarted(initialState(0), 't1', 29 * MIN)
+  s = afterSnooze(s, 30 * MIN)
+  expect(s.snoozedUntil).toBe(30 * MIN + SNOOZE_MS)
+  expect(decide(s, 30 * MIN + SNOOZE_MS - 1, S, false)).toBe(null)
+  expect(decide(s, 30 * MIN + SNOOZE_MS, S, false)).toBe('snooze')
+  // Not while a break is on show.
+  expect(decide(s, 40 * MIN, S, true)).toBe(null)
+  // Once shown again, the snooze is over and the usual rules apply.
+  s = afterNudge(s, 35 * MIN)
+  expect(s.snoozedUntil).toBe(null)
+  expect(decide(s, 36 * MIN, S, false)).toBe(null)
+})
+
+test('a snooze comes back even with interval reminders off and Claude idle', () => {
+  const s = afterSnooze(initialState(0), MIN)
+  expect(decide(s, MIN + SNOOZE_MS, { ...S, intervalMs: 0 }, false)).toBe('snooze')
 })

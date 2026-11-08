@@ -1,5 +1,7 @@
 import type { PluginOptions } from 'claude-code'
 
+import type { SceneId } from '../types'
+
 export const DEFAULT_WAIT_SECONDS = 20
 export const MAX_WAIT_SECONDS = 60 * 60
 
@@ -11,7 +13,12 @@ export type Settings = {
   waitMs: number
   /** How often to remind regardless of turns; 0 means off. */
   intervalMs: number
+  /** The moves a break may suggest, each turned on or off in /config. */
+  enabled: ReadonlySet<SceneId>
 }
+
+/** Each move's /config option is named after its scene. */
+export const MOVES: readonly SceneId[] = ['stand', 'water', 'squat', 'lunge', 'stretch', 'eyes', 'walk']
 
 /**
  * Reads a number from a stored option. Settings can hold anything a person
@@ -51,9 +58,21 @@ export function readIntervalMinutes(value: unknown): number {
   return Math.min(MAX_INTERVAL_MINUTES, Math.max(1, n))
 }
 
+/**
+ * A move's on/off option. Only an explicit "off" (`false`, or the strings
+ * `false`, `off`, `no`, `0`) turns it off: unset or anything unreadable keeps
+ * the move on, so a bad value never silently removes breaks.
+ */
+export function readEnabled(value: unknown): boolean {
+  if (value === false || value === 0) return false
+  if (typeof value === 'string') return !['false', 'off', 'no', '0'].includes(value.trim().toLowerCase())
+  return true
+}
+
 export function readSettings(options: PluginOptions): Settings {
   return {
     waitMs: readWaitSeconds(options.waitSeconds) * 1000,
     intervalMs: readIntervalMinutes(options.intervalMinutes) * 60_000,
+    enabled: new Set(MOVES.filter(m => readEnabled(options[m]))),
   }
 }

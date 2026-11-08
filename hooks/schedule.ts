@@ -7,6 +7,9 @@ import type { Settings } from './settings'
  */
 export const COOLDOWN_MS = 5 * 60_000
 
+/** How long "In 5 min" puts a break off. */
+export const SNOOZE_MS = 5 * 60_000
+
 export type ScheduleState = {
   /** When the interval clock started counting (session start). */
   startedAt: number
@@ -14,12 +17,14 @@ export type ScheduleState = {
   lastNudgeAt: number | null
   /** The main-loop turn in progress, or null when Claude is idle. */
   turn: { id: string; since: number; nudged: boolean } | null
+  /** When a snoozed break comes back; null when none is snoozed. */
+  snoozedUntil: number | null
 }
 
-export type NudgeReason = 'turn' | 'interval'
+export type NudgeReason = 'turn' | 'interval' | 'snooze'
 
 export function initialState(now: number): ScheduleState {
-  return { startedAt: now, lastNudgeAt: null, turn: null }
+  return { startedAt: now, lastNudgeAt: null, turn: null, snoozedUntil: null }
 }
 
 /**
@@ -29,10 +34,14 @@ export function initialState(now: number): ScheduleState {
 export function decide(
   state: ScheduleState,
   now: number,
-  settings: Settings,
+  settings: Pick<Settings, 'waitMs' | 'intervalMs'>,
   isBreakShowing: boolean,
 ): NudgeReason | null {
   if (isBreakShowing) return null
+
+  // A snoozed break is still the pending one: it comes back when its time is
+  // up, idle or not, and nothing else is shown meanwhile.
+  if (state.snoozedUntil !== null) return now >= state.snoozedUntil ? 'snooze' : null
 
   const { turn, lastNudgeAt } = state
   const sinceLast = lastNudgeAt === null ? Infinity : now - lastNudgeAt
@@ -58,6 +67,7 @@ export function afterNudge(state: ScheduleState, now: number): ScheduleState {
     ...state,
     lastNudgeAt: now,
     turn: state.turn === null ? null : { ...state.turn, nudged: true },
+    snoozedUntil: null,
   }
 }
 
@@ -68,6 +78,11 @@ export function afterNudge(state: ScheduleState, now: number): ScheduleState {
  */
 export function afterHandled(state: ScheduleState, now: number): ScheduleState {
   return { ...state, lastNudgeAt: now }
+}
+
+/** The state after the person pressed "In 5 min" at `now`. */
+export function afterSnooze(state: ScheduleState, now: number): ScheduleState {
+  return { ...state, lastNudgeAt: now, snoozedUntil: now + SNOOZE_MS }
 }
 
 export function turnStarted(state: ScheduleState, id: string, now: number): ScheduleState {
