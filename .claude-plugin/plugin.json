@@ -8,13 +8,13 @@
     "waitSeconds": {
       "type": "number",
       "title": "Wait before nudging (seconds)",
-      "description": "How long Claude must be working before a break is suggested.",
+      "description": "How long Claude must be working before a break is suggested. 1 to 3600; an invalid value uses the default.",
       "default": 20
     },
     "intervalMinutes": {
       "type": "number",
       "title": "Reminder interval (minutes)",
-      "description": "Also remind you this often, even if Claude is idle. 0 turns it off.",
+      "description": "Also remind you this often, even if Claude is idle. 0 turns it off; otherwise 1 to 1440. An invalid value uses the default.",
       "default": 30
     }
   }

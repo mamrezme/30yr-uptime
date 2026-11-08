@@ -1,66 +1,80 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Activity } from '../types'
+import { ACTIVITIES } from './activities'
+import { afterHandled, afterNudge, decide, initialState, turnEnded, turnStarted } from './schedule'
+import type { ScheduleState } from './schedule'
+import { readSettings } from './settings'
+import type { Settings } from './settings'
 
 const current = atom({ plugin: '30yr-uptime', key: 'current' } as const, null)
 const doneCount = atom({ plugin: '30yr-uptime', key: 'doneCount' } as const, 0)
 
-const ACTIVITIES: readonly Activity[] = [
-  { title: 'Stand up', detail: 'Get out of the chair and stand while Claude works.' },
-  { title: 'Drink water', detail: 'Take a few big sips of water.' },
-  { title: 'Squats', detail: 'Do 10 slow squats.' },
-  { title: 'Lunges', detail: 'Do 8 lunges on each leg.' },
-  { title: 'Stretch', detail: 'Reach up, roll your shoulders, stretch your neck and wrists.' },
-  { title: 'Wake up your eyes', detail: 'Look at something 20 feet away for 20 seconds.' },
-  { title: 'Walk', detail: 'Take a lap around the room.' },
-]
+const TICK_MS = 5000
 
-async function nudge($: EngineInterface, activity: Activity) {
+/** What one loaded module keeps between hooks; a reload starts it over. */
+type Context = {
+  settings: Settings
+  state: ScheduleState
+  nextIndex: number
+  ticker: Timer | null
+}
+
+async function tick($: EngineInterface, ctx: Context) {
+  const now = await $.clock.now()
+  const isBreakShowing = (await read($, current)) !== null
+
+  if (decide(ctx.state, now, ctx.settings, isBreakShowing) === null) return
+
+  const activity = ACTIVITIES[ctx.nextIndex % ACTIVITIES.length]!
+  ctx.nextIndex += 1
+  ctx.state = afterNudge(ctx.state, now)
+  // The band above the prompt is the one place a break shows: it stays until
+  // Done or Skip, while a toast would repeat the same words and vanish.
   await update($, current, () => activity)
-  $.ui.toast(`Break time: ${activity.title}. ${activity.detail}`)
+}
+
+async function handled($: EngineInterface, ctx: Context) {
+  ctx.state = afterHandled(ctx.state, await $.clock.now())
+  await update($, current, () => null)
 }
 
 export const register: Register = (on, options) => {
-  const waitMs = Math.max(1, Number(options.waitSeconds ?? 20)) * 1000
-  const intervalMs = Math.max(0, Number(options.intervalMinutes ?? 30)) * 60_000
-
-  let busySince: number | null = null
-  let hasNudgedThisTurn = false
-  let lastNudgeAt = 0
-  let nextIndex = 0
+  const ctx: Context = {
+    settings: readSettings(options),
+    state: initialState(0),
+    nextIndex: 0,
+    ticker: null,
+  }
 
   on('session.start', async ($, e, next) => {
-    lastNudgeAt = await $.clock.now()
+    // session.start can run more than once in a process (e.g. /clear); one
+    // ticker per module, or each run would add another and nudge faster.
+    ctx.ticker?.cancel()
+    ctx.ticker = null
+    ctx.state = initialState(await $.clock.now())
 
-    $.clock.every(5000, async () => {
-      const now = await $.clock.now()
-      const isWaiting = busySince !== null && now - busySince >= waitMs && !hasNudgedThisTurn
-      const isDue = intervalMs > 0 && now - lastNudgeAt >= intervalMs
-
-      if (isWaiting || isDue) {
-        hasNudgedThisTurn = hasNudgedThisTurn || busySince !== null
-        const activity = ACTIVITIES[nextIndex % ACTIVITIES.length]!
-        nextIndex += 1
-        lastNudgeAt = now
-        await nudge($, activity)
-      }
-    })
+    if (e.isInteractive) {
+      ctx.ticker = $.clock.every(TICK_MS, () => tick($, ctx))
+    }
 
     return next(e)
   })
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
-      busySince = await $.clock.now()
-      hasNudgedThisTurn = false
+      ctx.state = turnStarted(ctx.state, e.turnId, await $.clock.now())
     }
 
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    busySince = null
+    // A subagent's turn ends inside the main turn; only the main turn's own
+    // end means Claude stopped working.
+    if (e.agentId === undefined) {
+      ctx.state = turnEnded(ctx.state, e.turnId)
+    }
 
     return next(e)
   })
@@ -84,14 +98,10 @@ export const register: Register = (on, options) => {
           label={`Done (${total})`}
           onPress={async () => {
             await update($, doneCount, n => n + 1)
-            await update($, current, () => null)
+            await handled($, ctx)
           }}
         />
-        <Button
-          key="skip"
-          label="Skip"
-          onPress={() => update($, current, () => null)}
-        />
+        <Button key="skip" label="Skip" onPress={() => handled($, ctx)} />
       </Box>
     )
   })
