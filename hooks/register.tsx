@@ -15,6 +15,10 @@ const current = atom({ plugin: '30yr-uptime', key: 'current' } as const, null)
 const TICK_MS = 5000
 const FRAME_MS = 83 // ~12 frames a second
 const SCENE_KEY = 'scene'
+/** The `$.store` key `/break off` sets: reminders stay off across sessions. */
+const PAUSED_KEY = 'paused'
+const COMMAND = 'break'
+const USAGE = 'Usage: /break (a break now), /break off (pause reminders), /break on (resume them).'
 
 /** A drawn scene the frame timer repaints in place. */
 type Mount = { requestId: string; width: number; site: 'spinner' | 'band'; last: string }
@@ -36,6 +40,8 @@ type Context = {
   mounts: Map<string, Mount>
   /** The break on show, as last read: the frame timer does not read state. */
   showing: Activity | null
+  /** `/break off`: no reminders until `/break on`, kept in `$.store`. */
+  paused: boolean
 }
 
 function stopFrames(ctx: Context) {
@@ -71,22 +77,13 @@ async function paint($: EngineInterface, ctx: Context) {
   }
 }
 
-async function tick($: EngineInterface, ctx: Context) {
-  const now = await $.clock.now()
-  const isBreakShowing = (await read($, current)) !== null
+/** The moves turned on in /config. */
+function pool(ctx: Context): Activity[] {
+  return ACTIVITIES.filter(a => a.scene !== undefined && ctx.settings.enabled.has(a.scene))
+}
 
-  const reason = decide(ctx.state, now, ctx.settings, isBreakShowing)
-  if (reason === null) return
-
-  const pool = ACTIVITIES.filter(a => a.scene !== undefined && ctx.settings.enabled.has(a.scene))
-  const activity =
-    reason === 'snooze' && ctx.snoozed !== null ? ctx.snoozed : pickActivity(pool, ctx.lastScene, ctx.random)
-  ctx.snoozed = null
-  if (activity === null) {
-    // Every move is off in /config: nothing to suggest.
-    ctx.state = afterNudge(ctx.state, now)
-    return
-  }
+/** Puts `activity` in the band and starts its scene's clock. */
+async function show($: EngineInterface, ctx: Context, activity: Activity, now: number) {
   ctx.lastScene = activity.scene ?? null
   ctx.state = afterNudge(ctx.state, now)
   ctx.showing = activity
@@ -94,6 +91,61 @@ async function tick($: EngineInterface, ctx: Context) {
   // The band above the prompt is the one place a break's words and buttons
   // show: it stays until Done or Skip, while a toast would vanish.
   await update($, current, () => activity)
+}
+
+async function tick($: EngineInterface, ctx: Context) {
+  if (ctx.paused) return
+  const now = await $.clock.now()
+  const isBreakShowing = (await read($, current)) !== null
+
+  const reason = decide(ctx.state, now, ctx.settings, isBreakShowing)
+  if (reason === null) return
+
+  const activity =
+    reason === 'snooze' && ctx.snoozed !== null ? ctx.snoozed : pickActivity(pool(ctx), ctx.lastScene, ctx.random)
+  ctx.snoozed = null
+  if (activity === null) {
+    // Every move is off in /config: nothing to suggest.
+    ctx.state = afterNudge(ctx.state, now)
+    return
+  }
+  await show($, ctx, activity, now)
+}
+
+/** `/break`, `/break off`, `/break on`: the command's answer as one line. */
+async function runCommand($: EngineInterface, ctx: Context, args: string): Promise<string> {
+  const arg = args.trim().toLowerCase()
+  const now = await $.clock.now()
+
+  if (arg === 'off') {
+    ctx.paused = true
+    // A snoozed break would come back while paused: it is dropped.
+    ctx.snoozed = null
+    ctx.state = { ...ctx.state, snoozedUntil: null }
+    await $.store.set(PAUSED_KEY, true)
+    return 'Break reminders are off, in this and later sessions. /break still starts one; /break on turns them back on.'
+  }
+
+  if (arg === 'on') {
+    const was = ctx.paused
+    ctx.paused = false
+    await $.store.delete(PAUSED_KEY)
+    // The wait starts over from now, so turning them on is not answered by a
+    // reminder the very next tick.
+    ctx.state = afterHandled(ctx.state, now)
+    return was ? 'Break reminders are back on.' : 'Break reminders are already on.'
+  }
+
+  if (arg !== '') return USAGE
+
+  const pending = await read($, current)
+  if (pending !== null) return `A break is already on show: ${pending.title}. Press Done, In 5 min or Skip first.`
+
+  const activity = pickActivity(pool(ctx), ctx.lastScene, ctx.random)
+  if (activity === null) return 'Every move is turned off in /config: turn one on to take a break.'
+  ctx.snoozed = null
+  await show($, ctx, activity, now)
+  return `Break: ${activity.title}.`
 }
 
 type Answer = 'done' | 'skipped' | 'snoozed'
@@ -149,6 +201,7 @@ export const register: Register = (on, options) => {
     frames: null,
     mounts: new Map(),
     showing: null,
+    paused: false,
   }
 
   on('session.start', async ($, e, next) => {
@@ -159,13 +212,27 @@ export const register: Register = (on, options) => {
     stopFrames(ctx)
     ctx.state = initialState(await $.clock.now())
     ctx.snoozed = null
+    ctx.paused = (await $.store.get(PAUSED_KEY)) === true
 
     if (e.isInteractive) {
       ctx.ticker = $.clock.every(TICK_MS, () => tick($, ctx))
     }
 
+    try {
+      await $.command.register({
+        name: COMMAND,
+        description: 'Take a movement break now; off/on pauses or resumes the reminders',
+        argumentHint: '[off|on]',
+        immediate: true,
+      })
+    } catch {
+      // A host with no slash commands: the reminders still run without it.
+    }
+
     return next(e)
   })
+
+  on('command.run', { command: COMMAND }, async ($, e) => ({ text: await runCommand($, ctx, e.args ?? '') }))
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
