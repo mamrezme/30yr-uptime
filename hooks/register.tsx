@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Activity } from '../types'
+import { readSettings } from './settings'
 
 const current = atom({ plugin: 'wellness-breaks', key: 'current' } as const, null)
 const doneCount = atom({ plugin: 'wellness-breaks', key: 'doneCount' } as const, 0)
@@ -22,8 +23,7 @@ async function nudge($: EngineInterface, activity: Activity) {
 }
 
 export const register: Register = (on, options) => {
-  const waitMs = Math.max(1, Number(options.waitSeconds ?? 20)) * 1000
-  const intervalMs = Math.max(0, Number(options.intervalMinutes ?? 30)) * 60_000
+  const { waitMs, intervalMs } = readSettings(options)
 
   let busySince: number | null = null
   let hasNudgedThisTurn = false
