@@ -2,14 +2,14 @@
   "name": "30yr-uptime",
   "version": "0.1.0",
   "license": "MIT",
-  "description": "While Claude works, reminds you to stand up, drink water, stretch, and do lunges or squats.",
+  "description": "While Claude works, reminds you to stand up, drink water, stretch your neck, back, hips and legs, breathe, and do squats or lunges.",
   "types": "./types/index.d.ts",
   "userConfig": {
     "waitSeconds": {
       "type": "number",
       "title": "Wait before nudging (seconds)",
       "description": "How long Claude must be working before a break is suggested. 1 to 3600; an invalid value uses the default.",
-      "default": 20
+      "default": 15
     },
     "intervalMinutes": {
       "type": "number",
@@ -29,6 +29,54 @@
       "description": "Include the \"Drink water\" break. Turn off the moves you can't or don't want to do.",
       "default": true
     },
+    "walk": {
+      "type": "boolean",
+      "title": "Break: Walk",
+      "description": "Include the \"Walk\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "eyes": {
+      "type": "boolean",
+      "title": "Break: Eye rest (20-20-20)",
+      "description": "Include the \"Eye rest (20-20-20)\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "breathe": {
+      "type": "boolean",
+      "title": "Break: Box breathing",
+      "description": "Include the \"Box breathing\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "neck": {
+      "type": "boolean",
+      "title": "Break: Chin tucks",
+      "description": "Include the \"Chin tucks\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "shoulders": {
+      "type": "boolean",
+      "title": "Break: Shoulder blade squeeze",
+      "description": "Include the \"Shoulder blade squeeze\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "thoracic": {
+      "type": "boolean",
+      "title": "Break: Chair back extension",
+      "description": "Include the \"Chair back extension\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "twist": {
+      "type": "boolean",
+      "title": "Break: Seated twist",
+      "description": "Include the \"Seated twist\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "wrists": {
+      "type": "boolean",
+      "title": "Break: Wrist stretches",
+      "description": "Include the \"Wrist stretches\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
     "squat": {
       "type": "boolean",
       "title": "Break: Squats",
@@ -41,22 +89,28 @@
       "description": "Include the \"Lunges\" break. Turn off the moves you can't or don't want to do.",
       "default": true
     },
-    "stretch": {
+    "glutes": {
       "type": "boolean",
-      "title": "Break: Stretch",
-      "description": "Include the \"Stretch\" break. Turn off the moves you can't or don't want to do.",
+      "title": "Break: Glute kickbacks",
+      "description": "Include the \"Glute kickbacks\" break. Turn off the moves you can't or don't want to do.",
       "default": true
     },
-    "eyes": {
+    "hamstring": {
       "type": "boolean",
-      "title": "Break: Eye rest (20-20-20)",
-      "description": "Include the \"Eye rest (20-20-20)\" break. Turn off the moves you can't or don't want to do.",
+      "title": "Break: Hamstring stretch",
+      "description": "Include the \"Hamstring stretch\" break. Turn off the moves you can't or don't want to do.",
       "default": true
     },
-    "walk": {
+    "calf": {
       "type": "boolean",
-      "title": "Break: Walk",
-      "description": "Include the \"Walk\" break. Turn off the moves you can't or don't want to do.",
+      "title": "Break: Calf stretch",
+      "description": "Include the \"Calf stretch\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "hipflexor": {
+      "type": "boolean",
+      "title": "Break: Hip flexor stretch",
+      "description": "Include the \"Hip flexor stretch\" break. Turn off the moves you can't or don't want to do.",
       "default": true
     }
   }

@@ -4,6 +4,7 @@ import type { Engine } from 'claude-code/testing'
 
 import { ACTIVITIES } from '../hooks/activities'
 import { ROWS } from '../hooks/scenes'
+import { MOVES } from '../hooks/settings'
 
 const BAND = {
   plugin: '30yr-uptime',
@@ -131,7 +132,7 @@ test('a pending break is not replaced, and Skip restarts the wait', async ($, on
   expect(await bandTitle($, 'terminal')).toBe('engine')
 })
 
-test('Done counts the break for today, and the next break is a different move', async ($, on) => {
+test('the band names the move, what it does and what skipping it costs; Done clears it and the next move differs', async ($, on) => {
   const clock = engine(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await startTurn($, 't1')
@@ -139,14 +140,19 @@ test('Done counts the break for today, and the next break is a different move', 
 
   let ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   const first = (await ui.find({ type: 'Text' }))?.text
-  expect((await ui.find({ key: 'done' }))?.props.label).toBe('Done (0 today)')
-  expect(await ui.find({ type: 'Text', text: /day streak/ })).toBe(undefined)
+  const activity = ACTIVITIES.find(a => a.title === first)!
+  const words = (await ui.find({ type: 'Text', text: /Skip it/ }))?.text ?? ''
+  expect(words).toContain(activity.how)
+  expect(words).toContain(activity.does)
+  expect(words).toContain(activity.skip)
+  expect((await ui.find({ key: 'done' }))?.props.label).toBe('Done')
+  expect(await ui.find({ type: 'Text', text: /streak|today/ })).toBe(undefined)
   await ui.press({ key: 'done' })
   await ui.unmount()
   expect(await bandTitle($, 'desktop')).toBe('engine')
   await endTurn($, 't1')
 
-  // The next long turn, after the cooldown, shows another move and the count.
+  // The next long turn, after the cooldown, shows another move.
   await clock.advance(5 * 60_000)
   await startTurn($, 't2')
   await clock.advance(25_000)
@@ -154,9 +160,18 @@ test('Done counts the break for today, and the next break is a different move', 
   const second = (await ui.find({ type: 'Text' }))?.text
   expect(isBreak(second)).toBe(true)
   expect(second).not.toBe(first)
-  expect((await ui.find({ key: 'done' }))?.props.label).toBe('Done (1 today)')
-  expect((await ui.find({ type: 'Text', text: /day streak/ }))?.text).toBe(' 1-day streak')
+  expect((await ui.find({ key: 'done' }))?.props.label).toBe('Done')
   await ui.unmount()
+})
+
+test('the default wait is 15 seconds', async ($, on) => {
+  const clock = engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await startTurn($, 't1')
+  await clock.advance(10_000)
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+  await clock.advance(10_000)
+  expect(isBreak(await bandTitle($, 'terminal'))).toBe(true)
 })
 
 test('a second session.start does not add a second ticker', async ($, on) => {
@@ -221,22 +236,27 @@ test('while Claude works, the scene plays above the spinner, which stays', async
   await band.unmount()
 })
 
-test('the scene is repainted in place about 12 times a second', async ($, on) => {
-  const blits: string[] = []
-  on('ui.blit', (_, e, next) => {
-    if ('cells' in e) blits.push(e.cells)
-    return next(e)
-  })
-  const clock = await breakDuringTurn($, on)
-  const ui = await $.ui.mount({ ...SPINNER, surface: 'terminal', viewport: { columns: 100, rows: 40 } })
-  await clock.advance(2_000)
-  // A frame is sent only when it changed: some, never more than 2s of ticks,
-  // and never the same frame twice in a row.
-  expect(blits.length).toBeGreaterThan(2)
-  expect(blits.length).toBeLessThanOrEqual(25)
-  expect(blits.every((cells, i) => i === 0 || cells !== blits[i - 1])).toBe(true)
-  await ui.unmount()
-})
+test(
+  'the scene is repainted in place about 12 times a second',
+  // The walker moves every 140ms; holds only change once a second.
+  { options: Object.fromEntries(MOVES.filter(m => m !== 'walk').map(m => [m, false])) },
+  async ($, on) => {
+    const blits: string[] = []
+    on('ui.blit', (_, e, next) => {
+      if ('cells' in e) blits.push(e.cells)
+      return next(e)
+    })
+    const clock = await breakDuringTurn($, on)
+    const ui = await $.ui.mount({ ...SPINNER, surface: 'terminal', viewport: { columns: 100, rows: 40 } })
+    await clock.advance(2_000)
+    // A frame is sent only when it changed: some, never more than 2s of ticks,
+    // and never the same frame twice in a row.
+    expect(blits.length).toBeGreaterThan(2)
+    expect(blits.length).toBeLessThanOrEqual(25)
+    expect(blits.every((cells, i) => i === 0 || cells !== blits[i - 1])).toBe(true)
+    await ui.unmount()
+  },
+)
 
 test('no scene, the stock spinner: narrow terminal, desktop, or no break', async ($, on) => {
   const clock = engine(on)
@@ -303,55 +323,17 @@ test('after Done the animation stops', async ($, on) => {
   await band.unmount()
 })
 
-/** Today's key the way the mod writes it, for the mocked clock's time. */
-const today = (ms: number) => {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-test('Done, Skip and In 5 min are counted in the store, and the streak is read from it', async ($, on) => {
-  // The mocked clock starts at 0: "today" is that day, and the store already
-  // holds the two days before it.
-  const t0 = today(0)
-  const d = new Date(0)
-  const before = (n: number) => today(new Date(d.getFullYear(), d.getMonth(), d.getDate() - n, 12).getTime())
-  const { clock, writes } = engineWithStore(on, {
-    stats: { version: 1, days: { [before(1)]: { done: 2 }, [before(2)]: { done: 1 } } },
-  })
-  const lastStats = () => writes.filter(w => w.key === 'stats').at(-1)?.value
+test('Done, Skip and In 5 min keep no record: nothing is written to the store', async ($, on) => {
+  const { clock, writes } = engineWithStore(on, {})
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await startTurn($, 't1')
-  await clock.advance(25_000)
-
-  let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /day streak/ }))?.text).toBe(' 2-day streak')
-  await ui.press({ key: 'done' })
-  await ui.unmount()
-  expect(lastStats()).toEqual({
-    version: 1,
-    days: {
-      [before(1)]: { done: 2, skipped: 0, snoozed: 0 },
-      [before(2)]: { done: 1, skipped: 0, snoozed: 0 },
-      [t0]: { done: 1, skipped: 0, snoozed: 0 },
-    },
-  })
-  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ key: 'done' })).toBe(undefined)
-  await ui.unmount()
-  await endTurn($, 't1')
-
-  await clock.advance(30 * 60_000)
-  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /day streak/ }))?.text).toBe(' 3-day streak')
-  expect((await ui.find({ key: 'done' }))?.props.label).toBe('Done (1 today)')
-  await ui.press({ key: 'skip' })
-  await ui.unmount()
-  await clock.advance(30 * 60_000)
-  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'snooze' })
-  await ui.unmount()
-  const stored = lastStats() as { days: Record<string, unknown> }
-  expect(stored.days[t0]).toEqual({ done: 1, skipped: 1, snoozed: 1 })
+  for (const key of ['done', 'skip', 'snooze']) {
+    await clock.advance(30 * 60_000)
+    const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(isBreak((await ui.find({ type: 'Text' }))?.text)).toBe(true)
+    await ui.press({ key })
+    await ui.unmount()
+  }
+  expect(writes).toEqual([])
 })
 
 test('In 5 min hides the break and brings the same one back 5 minutes later', async ($, on) => {
@@ -376,7 +358,7 @@ test('In 5 min hides the break and brings the same one back 5 minutes later', as
 
 test(
   'a move turned off in /config is never suggested',
-  { options: { stand: false, water: false, squat: false, lunge: false, stretch: false, eyes: false } },
+  { options: Object.fromEntries(MOVES.filter(m => m !== 'walk').map(m => [m, false])) },
   async ($, on) => {
     const clock = engine(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -392,7 +374,7 @@ test(
 
 test(
   'every move off: no breaks at all',
-  { options: { stand: false, water: false, squat: false, lunge: false, stretch: false, eyes: false, walk: false } },
+  { options: Object.fromEntries(MOVES.map(m => [m, false])) },
   async ($, on) => {
     const clock = engine(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })

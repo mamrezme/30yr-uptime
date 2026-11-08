@@ -1,8 +1,9 @@
 import type { PluginOptions } from 'claude-code'
 
 import type { SceneId } from '../types'
+import { SCENE_IDS } from './scenes'
 
-export const DEFAULT_WAIT_SECONDS = 20
+export const DEFAULT_WAIT_SECONDS = 15
 export const MAX_WAIT_SECONDS = 60 * 60
 
 export const DEFAULT_INTERVAL_MINUTES = 30
@@ -18,7 +19,7 @@ export type Settings = {
 }
 
 /** Each move's /config option is named after its scene. */
-export const MOVES: readonly SceneId[] = ['stand', 'water', 'squat', 'lunge', 'stretch', 'eyes', 'walk']
+export const MOVES: readonly SceneId[] = SCENE_IDS
 
 /**
  * Reads a number from a stored option. Settings can hold anything a person

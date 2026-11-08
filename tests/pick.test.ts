@@ -32,7 +32,7 @@ test('picks only from the pool, and the last move is left out of it', () => {
   expect(pickActivity(pool, 'squat', seq(0))!.scene).toBe('walk')
   expect(pickActivity(pool, 'walk', seq(0.99))!.scene).toBe('squat')
   // random() can return values close to 1; the index stays in range.
-  expect(pickActivity(pool, null, () => 0.9999999)!.scene).toBe('walk')
+  expect(pickActivity(pool, null, () => 0.9999999)!.scene).toBe(pool.at(-1)!.scene)
 })
 
 test('one move on: it repeats; none on: nothing', () => {

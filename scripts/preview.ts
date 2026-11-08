@@ -11,7 +11,7 @@
 import { writeFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 
-import { ACTIVITIES } from '../hooks/activities'
+import { ACTIVITIES, describe } from '../hooks/activities'
 import { BODY, DEFAULT, drawScene, FLOOR, GOOD, PROP, ROWS, SCENE_IDS, WATER } from '../hooks/scenes'
 import type { SceneId } from '../hooks/scenes'
 import { CELL_H, CELL_W, glyph } from './font'
@@ -63,15 +63,24 @@ function rasterize(screen: Screen, pad = 1): { w: number; h: number; px: Uint32A
 const MOMENTS: Record<SceneId, number[]> = {
   stand: [500, 1700, 2200, 2700],
   water: [500, 2200, 3500, 9500],
+  walk: [1000, 2500, 4000, 5500],
+  eyes: [500, 10_500, 19_500, 21_000],
+  breathe: [500, 3000, 6000, 10_500],
+  neck: [500, 1700, 3500, 4800],
+  shoulders: [500, 1700, 4500, 6000],
+  thoracic: [500, 2000, 4500, 6500],
+  twist: [500, 2000, 16_000, 31_000],
+  wrists: [500, 12_000, 21_000, 31_000],
   squat: [300, 1200, 2300, 19_000],
   lunge: [300, 1000, 2700, 3500],
-  stretch: [500, 2000, 3500, 5000],
-  eyes: [500, 10_500, 19_500, 21_000],
-  walk: [1000, 2500, 4000, 5500],
+  glutes: [300, 1200, 2300, 21_000],
+  hamstring: [500, 1500, 20_500, 41_000],
+  calf: [500, 1500, 20_500, 41_000],
+  hipflexor: [500, 1500, 20_500, 41_000],
 }
 
 function sheet(ids: SceneId[]): Screen {
-  const W = 46, LABEL = 18, GAP = 2
+  const W = 46, LABEL = 24, GAP = 2
   const screen: Screen = []
   for (const id of ids) {
     const title = ACTIVITIES.find(a => a.scene === id)?.title ?? id
@@ -93,6 +102,35 @@ function sheet(ids: SceneId[]): Screen {
 const COLS = 88
 const SPINNER_WORDS = ['Pondering', 'Brewing', 'Tinkering', 'Noodling', 'Crafting', 'Mulling', 'Wandering']
 
+/** The band's lines: the words wrapped at spaces, then the buttons; always BAND_ROWS rows, so every frame is one size. */
+const BAND_ROWS = 4
+
+function band(a: (typeof ACTIVITIES)[number]): Cell[][] {
+  const parts: Array<[string, number]> = [
+    [a.title, FG],
+    [` (Claude is still working) ${describe(a)} `, DIM],
+    ['[', DIM], ['Done', FG], [']', DIM], [' ', FG],
+    ['[', DIM], ['In 5 min', FG], [']', DIM], [' ', FG],
+    ['[', DIM], ['Skip', FG], [']', DIM],
+  ]
+  const cells: Cell[] = []
+  for (const [str, c] of parts) for (const ch of str) cells.push({ ch, fg: c })
+  const rows: Cell[][] = []
+  let at = 0
+  while (at < cells.length) {
+    let end = Math.min(cells.length, at + COLS)
+    if (end < cells.length) {
+      const space = cells.slice(at, end).map(c => c.ch).lastIndexOf(' ')
+      if (space > 0) end = at + space + 1
+    }
+    rows.push(cells.slice(at, end))
+    at = end
+  }
+  if (rows.length > BAND_ROWS) throw new Error(`"${a.title}" takes ${rows.length} rows in the preview band`)
+  while (rows.length < BAND_ROWS) rows.push([])
+  return rows.map(r => [...r, ...textRow(COLS - r.length, [])])
+}
+
 function terminal(i: number, t: number, elapsed: number): Screen {
   const a = ACTIVITIES[i]!
   const id = a.scene!
@@ -101,11 +139,7 @@ function terminal(i: number, t: number, elapsed: number): Screen {
     ...sceneRows(id, t, COLS - 4),
     textRow(COLS, [['* ', BODY], [`${SPINNER_WORDS[i % SPINNER_WORDS.length]}...`, BODY], [` (${secs}s)`, DIM]]),
     textRow(COLS, []),
-    textRow(COLS, [
-      [a.title, FG],
-      [` (Claude is still working) ${a.detail} `, DIM],
-      ['[', DIM], [`Done (${i})`, FG], [']', DIM], [' ', FG], ['[', DIM], ['Skip', FG], [']', DIM],
-    ]),
+    ...band(a),
     textRow(COLS, [['-'.repeat(COLS), FLOOR]]),
     textRow(COLS, [['> ', DIM]]),
   ]
@@ -113,13 +147,22 @@ function terminal(i: number, t: number, elapsed: number): Screen {
 
 /** Each break's stretch of the GIF: where its clock starts and how long it plays. */
 const CLIPS: Record<SceneId, [number, number]> = {
-  stand: [0, 4000],
-  water: [0, 3600],
-  squat: [0, 4000],
-  lunge: [0, 4800],
-  stretch: [0, 6000],
-  eyes: [16_500, 5000],
-  walk: [0, 4500],
+  stand: [0, 3600],
+  water: [0, 3000],
+  walk: [0, 2500],
+  eyes: [17_500, 3000],
+  breathe: [1000, 3000],
+  neck: [0, 3000],
+  shoulders: [0, 2500],
+  thoracic: [0, 3000],
+  twist: [13_500, 3000],
+  wrists: [8500, 3000],
+  squat: [0, 3000],
+  lunge: [0, 3000],
+  glutes: [0, 3000],
+  hamstring: [18_500, 3000],
+  calf: [0, 2500],
+  hipflexor: [18_500, 3000],
 }
 const FRAME_MS = 100
 
