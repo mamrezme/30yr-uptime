@@ -16,6 +16,48 @@
       "title": "Reminder interval (minutes)",
       "description": "Also remind you this often, even if Claude is idle. 0 turns it off; otherwise 1 to 1440. An invalid value uses the default.",
       "default": 30
+    },
+    "stand": {
+      "type": "boolean",
+      "title": "Break: Stand up",
+      "description": "Include the \"Stand up\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "water": {
+      "type": "boolean",
+      "title": "Break: Drink water",
+      "description": "Include the \"Drink water\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "squat": {
+      "type": "boolean",
+      "title": "Break: Squats",
+      "description": "Include the \"Squats\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "lunge": {
+      "type": "boolean",
+      "title": "Break: Lunges",
+      "description": "Include the \"Lunges\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "stretch": {
+      "type": "boolean",
+      "title": "Break: Stretch",
+      "description": "Include the \"Stretch\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "eyes": {
+      "type": "boolean",
+      "title": "Break: Eye rest (20-20-20)",
+      "description": "Include the \"Eye rest (20-20-20)\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
+    },
+    "walk": {
+      "type": "boolean",
+      "title": "Break: Walk",
+      "description": "Include the \"Walk\" break. Turn off the moves you can't or don't want to do.",
+      "default": true
     }
   }
 }

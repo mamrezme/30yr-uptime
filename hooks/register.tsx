@@ -1,16 +1,20 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Activity } from '../types'
+import type { Activity, SceneId } from '../types'
 import { ACTIVITIES } from './activities'
-import { afterHandled, afterNudge, decide, initialState, turnEnded, turnStarted } from './schedule'
+import { pickActivity } from './pick'
+import { afterHandled, afterNudge, afterSnooze, decide, initialState, turnEnded, turnStarted } from './schedule'
 import type { ScheduleState } from './schedule'
 import { drawScene, EDGE, encode, ROWS, sceneWidth } from './scenes'
 import { readSettings } from './settings'
 import type { Settings } from './settings'
+import { dayKey, doneOn, EMPTY_STATS, parseStats, record, STATS_KEY, streak } from './stats'
+import type { DayCounts } from './stats'
 
 const current = atom({ plugin: '30yr-uptime', key: 'current' } as const, null)
-const doneCount = atom({ plugin: '30yr-uptime', key: 'doneCount' } as const, 0)
+/** The store's counts, mirrored in state so the band redraws when they change. */
+const stats = atom({ plugin: '30yr-uptime', key: 'stats' } as const, EMPTY_STATS)
 
 const TICK_MS = 5000
 const FRAME_MS = 83 // ~12 frames a second
@@ -23,7 +27,11 @@ type Mount = { requestId: string; width: number; site: 'spinner' | 'band'; last:
 type Context = {
   settings: Settings
   state: ScheduleState
-  nextIndex: number
+  /** The move shown last, so the next pick is a different one. */
+  lastScene: SceneId | null
+  /** The break "In 5 min" put off; shown again when the schedule says so. */
+  snoozed: Activity | null
+  random: () => number
   ticker: Timer | null
   /** When the break on show was shown: the scene's clock. */
   shownAt: number | null
@@ -71,10 +79,19 @@ async function tick($: EngineInterface, ctx: Context) {
   const now = await $.clock.now()
   const isBreakShowing = (await read($, current)) !== null
 
-  if (decide(ctx.state, now, ctx.settings, isBreakShowing) === null) return
+  const reason = decide(ctx.state, now, ctx.settings, isBreakShowing)
+  if (reason === null) return
 
-  const activity = ACTIVITIES[ctx.nextIndex % ACTIVITIES.length]!
-  ctx.nextIndex += 1
+  const pool = ACTIVITIES.filter(a => a.scene !== undefined && ctx.settings.enabled.has(a.scene))
+  const activity =
+    reason === 'snooze' && ctx.snoozed !== null ? ctx.snoozed : pickActivity(pool, ctx.lastScene, ctx.random)
+  ctx.snoozed = null
+  if (activity === null) {
+    // Every move is off in /config: nothing to suggest.
+    ctx.state = afterNudge(ctx.state, now)
+    return
+  }
+  ctx.lastScene = activity.scene ?? null
   ctx.state = afterNudge(ctx.state, now)
   ctx.showing = activity
   ctx.shownAt = now
@@ -83,8 +100,24 @@ async function tick($: EngineInterface, ctx: Context) {
   await update($, current, () => activity)
 }
 
-async function handled($: EngineInterface, ctx: Context) {
-  ctx.state = afterHandled(ctx.state, await $.clock.now())
+/** Adds one to today's count in the store, and to the state the band reads. */
+async function count($: EngineInterface, now: number, what: keyof DayCounts) {
+  const next = record(parseStats(await $.store.get(STATS_KEY)), dayKey(now), what)
+  await $.store.set(STATS_KEY, next)
+  await update($, stats, () => next)
+}
+
+type Answer = 'done' | 'skipped' | 'snoozed'
+
+async function handled($: EngineInterface, ctx: Context, answer: Answer) {
+  const now = await $.clock.now()
+  if (answer === 'snoozed') {
+    ctx.snoozed = await read($, current)
+    ctx.state = afterSnooze(ctx.state, now)
+  } else {
+    ctx.state = afterHandled(ctx.state, now)
+  }
+  await count($, now, answer)
   ctx.showing = null
   ctx.shownAt = null
   stopFrames(ctx)
@@ -120,7 +153,9 @@ export const register: Register = (on, options) => {
   const ctx: Context = {
     settings: readSettings(options),
     state: initialState(0),
-    nextIndex: 0,
+    lastScene: null,
+    snoozed: null,
+    random: Math.random,
     ticker: null,
     shownAt: null,
     frames: null,
@@ -135,8 +170,13 @@ export const register: Register = (on, options) => {
     ctx.ticker = null
     stopFrames(ctx)
     ctx.state = initialState(await $.clock.now())
+    ctx.snoozed = null
 
     if (e.isInteractive) {
+      // Counts from earlier sessions: the band shows today's and the streak.
+      const stored = parseStats(await $.store.get(STATS_KEY))
+      await update($, stats, () => stored)
+
       ctx.ticker = $.clock.every(TICK_MS, () => tick($, ctx))
     }
 
@@ -193,22 +233,21 @@ export const register: Register = (on, options) => {
       return next(e)
     }
 
-    const total = await read($, doneCount)
+    const counts = await read($, stats)
+    const today = dayKey(await $.clock.now())
+    const days = streak(counts, today)
     const { Box, Button, Text } = $.ui.resolve(e)
 
     const words = (
       <Box>
         <Text bold>{activity.title}</Text>
         <Text dimColor> {e.props.isWorking ? '(Claude is still working) ' : ''}{activity.detail} </Text>
-        <Button
-          key="done"
-          label={`Done (${total})`}
-          onPress={async () => {
-            await update($, doneCount, n => n + 1)
-            await handled($, ctx)
-          }}
-        />
-        <Button key="skip" label="Skip" onPress={() => handled($, ctx)} />
+        <Button key="done" label={`Done (${doneOn(counts, today)} today)`} onPress={() => handled($, ctx, 'done')} />
+        <Button key="snooze" label="In 5 min" onPress={() => handled($, ctx, 'snoozed')} />
+        <Button key="skip" label="Skip" onPress={() => handled($, ctx, 'skipped')} />
+        {days > 0 ? (
+          <Text key="streak" dimColor>{` ${days}-day streak`}</Text>
+        ) : null}
       </Box>
     )
 
