@@ -3,8 +3,8 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Activity } from '../types'
 
-const current = atom({ plugin: 'wellness-breaks', key: 'current' } as const, null)
-const doneCount = atom({ plugin: 'wellness-breaks', key: 'doneCount' } as const, 0)
+const current = atom({ plugin: '30yr-uptime', key: 'current' } as const, null)
+const doneCount = atom({ plugin: '30yr-uptime', key: 'doneCount' } as const, 0)
 
 const ACTIVITIES: readonly Activity[] = [
   { title: 'Stand up', detail: 'Get out of the chair and stand while Claude works.' },
