@@ -7,8 +7,8 @@ import type { ScheduleState } from './schedule'
 import { readSettings } from './settings'
 import type { Settings } from './settings'
 
-const current = atom({ plugin: 'wellness-breaks', key: 'current' } as const, null)
-const doneCount = atom({ plugin: 'wellness-breaks', key: 'doneCount' } as const, 0)
+const current = atom({ plugin: '30yr-uptime', key: 'current' } as const, null)
+const doneCount = atom({ plugin: '30yr-uptime', key: 'doneCount' } as const, 0)
 
 const TICK_MS = 5000
 

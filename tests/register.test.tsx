@@ -5,7 +5,7 @@ import type { Engine } from 'claude-code/testing'
 import { ACTIVITIES } from '../hooks/activities'
 
 const BAND = {
-  plugin: 'wellness-breaks',
+  plugin: '30yr-uptime',
   component: 'AbovePrompt',
   props: {
     hasSurvey: false,
