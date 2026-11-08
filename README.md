@@ -7,5 +7,5 @@ Settings (in /config): `waitSeconds` (default 20) and `intervalMinutes` (default
 ## Install
 
 ```
-/plugin install 30yr-uptime --marketplace iMohammadReza/30yr-uptime
+/plugin install 30yr-uptime --marketplace mamrezme/30yr-uptime
 ```
