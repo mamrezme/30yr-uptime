@@ -1,11 +1,11 @@
 {
-  "name": "wellness-breaks",
+  "name": "30yr-uptime",
   "owner": {
     "name": "mamrez"
   },
   "plugins": [
     {
-      "name": "wellness-breaks",
+      "name": "30yr-uptime",
       "source": "./",
       "description": "While Claude works, reminds you to stand up, drink water, stretch, and do lunges or squats."
     }
