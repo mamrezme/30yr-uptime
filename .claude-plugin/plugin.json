@@ -1,0 +1,21 @@
+{
+  "name": "wellness-breaks",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "While Claude works, reminds you to stand up, drink water, stretch, and do lunges or squats.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "waitSeconds": {
+      "type": "number",
+      "title": "Wait before nudging (seconds)",
+      "description": "How long Claude must be working before a break is suggested.",
+      "default": 20
+    },
+    "intervalMinutes": {
+      "type": "number",
+      "title": "Reminder interval (minutes)",
+      "description": "Also remind you this often, even if Claude is idle. 0 turns it off.",
+      "default": 30
+    }
+  }
+}

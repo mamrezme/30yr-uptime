@@ -1,0 +1,13 @@
+{
+  "name": "wellness-breaks",
+  "owner": {
+    "name": "mamrez"
+  },
+  "plugins": [
+    {
+      "name": "wellness-breaks",
+      "source": "./",
+      "description": "While Claude works, reminds you to stand up, drink water, stretch, and do lunges or squats."
+    }
+  ]
+}
