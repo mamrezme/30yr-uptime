@@ -53,16 +53,23 @@ const timing = (o: Parameters<typeof readSettings>[0]) => {
   return { waitMs, intervalMs }
 }
 
+test('the defaults: 15 seconds, 30 minutes', () => {
+  expect(DEFAULT_WAIT_SECONDS).toBe(15)
+  expect(DEFAULT_INTERVAL_MINUTES).toBe(30)
+})
+
 test('readSettings converts to milliseconds', () => {
-  expect(timing({ waitSeconds: 20, intervalMinutes: 30 })).toEqual({ waitMs: 20_000, intervalMs: 1_800_000 })
-  expect(timing({})).toEqual({ waitMs: 20_000, intervalMs: 1_800_000 })
-  expect(timing({ waitSeconds: 'x', intervalMinutes: 0 })).toEqual({ waitMs: 20_000, intervalMs: 0 })
+  expect(timing({ waitSeconds: 20, intervalMinutes: 45 })).toEqual({ waitMs: 20_000, intervalMs: 2_700_000 })
+  expect(timing({})).toEqual({ waitMs: 15_000, intervalMs: 1_800_000 })
+  expect(timing({ waitSeconds: 'x', intervalMinutes: 0 })).toEqual({ waitMs: 15_000, intervalMs: 0 })
 })
 
 test('every move is on unless its option is turned off', () => {
   expect([...readSettings({}).enabled]).toEqual([...MOVES])
   const enabled = readSettings({ squat: false, lunge: 'off', walk: 'FALSE', eyes: true, water: 'yes' }).enabled
-  expect([...enabled]).toEqual(['stand', 'water', 'stretch', 'eyes'])
+  expect([...enabled]).toEqual(MOVES.filter(m => !['squat', 'lunge', 'walk'].includes(m)))
+  expect(enabled.has('water')).toBe(true)
+  expect(enabled.has('eyes')).toBe(true)
 })
 
 test('readEnabled: only an explicit off turns a move off', () => {

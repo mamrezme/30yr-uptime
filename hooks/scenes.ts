@@ -6,7 +6,29 @@ import type { SceneId } from '../types'
 
 export type { SceneId }
 
-export const SCENE_IDS: readonly SceneId[] = ['stand', 'water', 'squat', 'lunge', 'stretch', 'eyes', 'walk']
+export const SCENE_IDS: readonly SceneId[] = [
+  'stand',
+  'water',
+  'walk',
+  'eyes',
+  'breathe',
+  'neck',
+  'shoulders',
+  'thoracic',
+  'twist',
+  'wrists',
+  'squat',
+  'lunge',
+  'glutes',
+  'hamstring',
+  'calf',
+  'hipflexor',
+]
+
+/** Whether this version draws `id`: a break stored by an older one may name a scene since dropped. */
+export function hasScene(id: unknown): id is SceneId {
+  return typeof id === 'string' && (SCENE_IDS as readonly string[]).includes(id)
+}
 
 /** Terminal rows a scene takes; the last is the floor the figure stands on. */
 export const ROWS = 5
@@ -159,15 +181,6 @@ function lunge(f: Frame, t: number) {
   put(f, SAY, 2, `${left ? 'left ' : 'right'} ${n}/${LUNGE_REPS}`, TEXT)
 }
 
-function stretch(f: Frame, t: number) {
-  floor(f)
-  const { i } = phase(t, [1500, 1500, 1500, 1500])
-  if (i === 0 || i === 2) put(f, X, 0, ['\\   /', ' \\O/', '  |', '  |', ' / \\'], BODY)
-  else if (i === 1) put(f, X, 0, ['\\\\', ' \\O', '  |\\', '  |', ' / \\'], BODY)
-  else put(f, X, 0, ['    //', '   O/', '  /|', '  |', ' / \\'], BODY)
-  put(f, SAY, 2, i % 2 === 0 ? 'breathe in' : 'and lean', TEXT)
-}
-
 const TREE = ['  ^', ' /^\\', '/___\\', '  |']
 
 /** Seconds left of the 20 seconds, counting down to 0. */
@@ -205,20 +218,227 @@ function walk(f: Frame, t: number) {
   for (let p = x - 3; p > 0 && p > x - 20; p -= 4) put(f, p, ROWS - 1, '.', PROP)
 }
 
+/**
+ * Timed holds one after another (left side, then right): which hold `t` falls
+ * in and its whole seconds left, counting down to 1; null once all are over.
+ */
+export function holdAt(t: number, holdMs: number, count: number): { i: number; left: number } | null {
+  const i = Math.floor(t / holdMs)
+  if (i >= count) return null
+  return { i, left: Math.max(1, Math.ceil((holdMs * (i + 1) - t) / 1000)) }
+}
+
+// Box breathing: four sides of 4 seconds, three rounds, then done.
+export const BOX_MS = 4000
+export const BREATHE_ROUNDS = 3
+const BOX_STEPS = ['breathe in', 'hold', 'breathe out', 'hold'] as const
+
+function breathe(f: Frame, t: number) {
+  floor(f)
+  const side = Math.floor(t / BOX_MS)
+  const round = Math.floor(side / 4)
+  const s = side % 4
+  const at = t % BOX_MS
+  const done = round >= BREATHE_ROUNDS
+  const full = !done && (s === 1 || (s === 0 && at >= BOX_MS / 2) || (s === 2 && at < BOX_MS / 2))
+  put(f, X, 1, full ? [' O', '(|)', ' |', '/ \\'] : [' O', '/|\\', ' |', '/ \\'], BODY)
+  const BX = X + 6, BW = 7, BH = 4
+  put(f, BX, 0, ['+-----+', '|     |', '|     |', '+-----+'], PROP)
+  if (done) {
+    put(f, SAY, 1, 'done!', GOOD)
+    return
+  }
+  // A dot runs round the box: along the top breathing in, down the right
+  // holding, back along the bottom breathing out, up the left holding.
+  const k = at / BOX_MS
+  const across = Math.round(k * (BW - 1)), down = Math.round(k * (BH - 1))
+  const [x, y] =
+    s === 0 ? [BX + across, 0] : s === 1 ? [BX + BW - 1, down] : s === 2 ? [BX + BW - 1 - across, BH - 1] : [BX, BH - 1 - down]
+  put(f, x, y, 'o', WATER)
+  put(f, SAY, 1, `${BOX_STEPS[s]} ${4 - Math.floor(at / 1000)}`, TEXT)
+  put(f, SAY, 2, `round ${round + 1}/${BREATHE_ROUNDS}`, DEFAULT)
+}
+
+// Chin tucks, from the side: the head pokes toward the monitor, then slides back.
+export const NECK_REPS = 10
+const NECK_MS = 3000
+const MONITOR = ['.----.', '|    |', "'----'", '  ||']
+
+function neck(f: Frame, t: number) {
+  floor(f)
+  put(f, X + 9, 0, MONITOR, PROP)
+  const { i, at } = phase(t, [1000, 2000])
+  if (i === 0) {
+    put(f, X, 1, ['   O', '  /', ' |', '/ \\'], BODY)
+  } else {
+    put(f, X, 1, [' O', ' |', ' |', '/ \\'], BODY)
+    put(f, X + 3, 1, '<-', TEXT)
+    put(f, SAY, 3, `hold ${2 - Math.floor(at / 1000)}`, DEFAULT)
+  }
+  const n = (Math.floor(t / NECK_MS) % NECK_REPS) + 1
+  put(f, SAY, 2, `tuck ${n}/${NECK_REPS}`, TEXT)
+}
+
+// Shoulder blade squeeze, from behind: arms hang, then elbows pull back and down.
+export const SHOULDER_REPS = 10
+const SHOULDER_MS = 4000
+
+function shoulders(f: Frame, t: number) {
+  floor(f)
+  const { i, at } = phase(t, [1000, 3000])
+  if (i === 0) {
+    put(f, X, 1, ['  O', ' /|\\', '/ | \\', ' / \\'], BODY)
+  } else {
+    put(f, X, 0, ['\\   /', ' \\O/', ' >|<', '  |', ' / \\'], BODY)
+    put(f, SAY, 3, `hold ${3 - Math.floor(at / 1000)}`, DEFAULT)
+  }
+  const n = (Math.floor(t / SHOULDER_MS) % SHOULDER_REPS) + 1
+  put(f, SAY, 2, `squeeze ${n}/${SHOULDER_REPS}`, TEXT)
+}
+
+// Chair back extension: seated, hands behind the head, the upper back arches
+// over the backrest and comes up again.
+export const THORACIC_REPS = 5
+const THORACIC_MS = 4000
+
+function thoracic(f: Frame, t: number) {
+  floor(f)
+  put(f, X, 1, CHAIR, PROP)
+  const { i } = phase(t, [1500, 2500])
+  if (i === 0) put(f, X + 1, 1, ['<O>', ' |', ' |__', '     |'], BODY)
+  else put(f, X - 1, 0, ['<O>', '   \\', '    \\', '    |__', '       |'], BODY)
+  const n = (Math.floor(t / THORACIC_MS) % THORACIC_REPS) + 1
+  put(f, SAY, 2, `${i === 0 ? 'sit tall' : 'arch back'} ${n}/${THORACIC_REPS}`, TEXT)
+}
+
+// Seated twist: 15 seconds to each side, holding the back of the chair.
+export const TWIST_MS = 15_000
+
+function twist(f: Frame, t: number) {
+  floor(f)
+  const hold = holdAt(t, TWIST_MS, 2)
+  const deeper = Math.floor(t / 1500) % 2 === 1
+  if (hold === null) {
+    put(f, X, 1, ['  O', ' /|\\', ' _|_', ' | |'], BODY)
+    put(f, SAY, 2, 'done!', GOOD)
+    return
+  }
+  const left = hold.i === 0
+  put(f, X, 1, left ? ['  O', '__|\\', ' _|_', ' | |'] : ['  O', ' /|__', ' _|_', ' | |'], BODY)
+  put(f, left ? X - (deeper ? 1 : 0) : X + 3, 0, left ? (deeper ? '<--' : '<-') : deeper ? '-->' : '->', TEXT)
+  put(f, SAY, 2, `twist ${left ? 'left ' : 'right'} ${hold.left}s`, TEXT)
+}
+
+// Wrist stretches: arm out, fingers pulled up then down, each hand 10 seconds a pose.
+export const WRIST_MS = 10_000
+const WRIST_POSES = [
+  ['right', 'up'],
+  ['right', 'down'],
+  ['left', 'up'],
+  ['left', 'down'],
+] as const
+
+function wrists(f: Frame, t: number) {
+  floor(f)
+  const FX = X + 4
+  const hold = holdAt(t, WRIST_MS, WRIST_POSES.length)
+  if (hold === null) {
+    put(f, FX, 1, ['  O', ' /|\\', '  |', ' / \\'], BODY)
+    put(f, SAY, 2, 'done!', GOOD)
+    return
+  }
+  const [hand, way] = WRIST_POSES[hold.i]!
+  const right = hand === 'right'
+  put(f, FX, 1, ['  O', '  |', '  |', ' / \\'], BODY)
+  const ax = right ? FX + 3 : FX - 2
+  put(f, ax, 2, '----', BODY)
+  const tip = right ? FX + 7 : FX - 3
+  // The fingers, pulled up or down; the other hand, a beat behind, presses them.
+  put(f, tip, way === 'up' ? 1 : 3, '|', BODY)
+  if (Math.floor(t / 800) % 2 === 0) put(f, tip + (right ? 1 : -1), way === 'up' ? 1 : 3, right ? '<' : '>', PROP)
+  put(f, SAY, 2, `${hand} fingers ${way} ${hold.left}s`, TEXT)
+}
+
+// Glute kickbacks, from the side: a hand on the desk, one leg kicks straight back.
+export const GLUTE_REPS = 10
+const GLUTE_MS = 2000
+const DESK = ['_____', '|   |', '|   |']
+
+function glutes(f: Frame, t: number) {
+  floor(f)
+  put(f, X + 5, 1, DESK, PROP)
+  const { i } = phase(t, [800, 1200])
+  put(f, X, 1, i === 0 ? ['  O', '  |\\_', '__|', '  |'] : ['  O', '  |\\_', '  |', ' /|'], BODY)
+  const rep = Math.floor(t / GLUTE_MS)
+  const left = Math.floor(rep / GLUTE_REPS) % 2 === 0
+  put(f, SAY, 2, `kick ${left ? 'left ' : 'right'} ${(rep % GLUTE_REPS) + 1}/${GLUTE_REPS}`, TEXT)
+}
+
+// The leg stretches: 20 seconds a side, leaning a little deeper every second.
+export const LEG_HOLD_MS = 20_000
+
+function legHold(f: Frame, t: number, label: (left: boolean) => string, pose: (deeper: boolean) => readonly string[]) {
+  const hold = holdAt(t, LEG_HOLD_MS, 2)
+  const deeper = hold !== null && Math.floor(t / 1000) % 2 === 1
+  put(f, X, 1, pose(deeper), BODY)
+  if (hold === null) put(f, SAY, 2, 'done!', GOOD)
+  else put(f, SAY, 2, `${label(hold.i === 0)} ${hold.left}s`, TEXT)
+}
+
+function hamstring(f: Frame, t: number) {
+  floor(f)
+  legHold(
+    f,
+    t,
+    left => `${left ? 'left ' : 'right'} leg`,
+    deeper => (deeper ? ['', '  ___O', ' /  \\', '/    \\_'] : ['', '  __O', ' /  \\', '/    \\_']),
+  )
+}
+
+function calf(f: Frame, t: number) {
+  floor(f)
+  put(f, X + 8, 0, ['|', '|', '|', '|', '|'], PROP)
+  legHold(
+    f,
+    t,
+    left => `${left ? 'left ' : 'right'} heel down`,
+    deeper => (deeper ? ['      O', '     /--', '   /\\', '__/  \\'] : ['     O', '    /---', '   /\\', '__/  \\']),
+  )
+}
+
+function hipflexor(f: Frame, t: number) {
+  floor(f)
+  legHold(
+    f,
+    t,
+    left => `${left ? 'left ' : 'right'} leg back`,
+    deeper => (deeper ? ['    O', '   /|\\', '    |__', '___/   |'] : ['   O', '  /|\\', '   |__', '___/   |']),
+  )
+}
+
 const SCENES: Record<SceneId, (f: Frame, t: number) => void> = {
   stand,
   water,
+  walk,
+  eyes,
+  breathe,
+  neck,
+  shoulders,
+  thoracic,
+  twist,
+  wrists,
   squat,
   lunge,
-  stretch,
-  eyes,
-  walk,
+  glutes,
+  hamstring,
+  calf,
+  hipflexor,
 }
 
 /** The scene `id` at `t` ms after the break was shown, `width` columns wide. */
 export function drawScene(id: SceneId, t: number, width: number): Frame {
   const f = blank(width)
-  SCENES[id](f, Math.max(0, t))
+  SCENES[id]?.(f, Math.max(0, t))
   return f
 }
 

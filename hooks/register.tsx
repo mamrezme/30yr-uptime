@@ -2,19 +2,15 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Activity, SceneId } from '../types'
-import { ACTIVITIES } from './activities'
+import { ACTIVITIES, describe } from './activities'
 import { pickActivity } from './pick'
 import { afterHandled, afterNudge, afterSnooze, decide, initialState, turnEnded, turnStarted } from './schedule'
 import type { ScheduleState } from './schedule'
-import { drawScene, EDGE, encode, ROWS, sceneWidth } from './scenes'
+import { drawScene, EDGE, encode, hasScene, ROWS, sceneWidth } from './scenes'
 import { readSettings } from './settings'
 import type { Settings } from './settings'
-import { dayKey, doneOn, EMPTY_STATS, parseStats, record, STATS_KEY, streak } from './stats'
-import type { DayCounts } from './stats'
 
 const current = atom({ plugin: '30yr-uptime', key: 'current' } as const, null)
-/** The store's counts, mirrored in state so the band redraws when they change. */
-const stats = atom({ plugin: '30yr-uptime', key: 'stats' } as const, EMPTY_STATS)
 
 const TICK_MS = 5000
 const FRAME_MS = 83 // ~12 frames a second
@@ -55,7 +51,7 @@ function startFrames($: EngineInterface, ctx: Context) {
 /** Repaints every mounted scene; a site that refuses is drawn again instead. */
 async function paint($: EngineInterface, ctx: Context) {
   const scene = ctx.showing?.scene
-  if (scene === undefined || ctx.shownAt === null || ctx.mounts.size === 0) {
+  if (!hasScene(scene) || ctx.shownAt === null || ctx.mounts.size === 0) {
     // Nothing on screen to move: no timer until a site draws a scene again.
     stopFrames(ctx)
     return
@@ -100,13 +96,6 @@ async function tick($: EngineInterface, ctx: Context) {
   await update($, current, () => activity)
 }
 
-/** Adds one to today's count in the store, and to the state the band reads. */
-async function count($: EngineInterface, now: number, what: keyof DayCounts) {
-  const next = record(parseStats(await $.store.get(STATS_KEY)), dayKey(now), what)
-  await $.store.set(STATS_KEY, next)
-  await update($, stats, () => next)
-}
-
 type Answer = 'done' | 'skipped' | 'snoozed'
 
 async function handled($: EngineInterface, ctx: Context, answer: Answer) {
@@ -117,7 +106,6 @@ async function handled($: EngineInterface, ctx: Context, answer: Answer) {
   } else {
     ctx.state = afterHandled(ctx.state, now)
   }
-  await count($, now, answer)
   ctx.showing = null
   ctx.shownAt = null
   stopFrames(ctx)
@@ -126,8 +114,8 @@ async function handled($: EngineInterface, ctx: Context, answer: Answer) {
 
 /**
  * The scene's first frame for a site, and the mount the frame timer repaints;
- * null when this break has no scene. A break that outlived a reload starts
- * its clock over here.
+ * null when this break has no scene this version draws. A break that
+ * outlived a reload starts its clock over here.
  */
 async function sceneFor(
   $: EngineInterface,
@@ -137,7 +125,7 @@ async function sceneFor(
   site: Mount['site'],
   width: number,
 ): Promise<string | null> {
-  if (activity.scene === undefined) return null
+  if (!hasScene(activity.scene)) return null
   const now = await $.clock.now()
   if (ctx.showing?.title !== activity.title || ctx.shownAt === null) {
     ctx.showing = activity
@@ -173,10 +161,6 @@ export const register: Register = (on, options) => {
     ctx.snoozed = null
 
     if (e.isInteractive) {
-      // Counts from earlier sessions: the band shows today's and the streak.
-      const stored = parseStats(await $.store.get(STATS_KEY))
-      await update($, stats, () => stored)
-
       ctx.ticker = $.clock.every(TICK_MS, () => tick($, ctx))
     }
 
@@ -233,21 +217,15 @@ export const register: Register = (on, options) => {
       return next(e)
     }
 
-    const counts = await read($, stats)
-    const today = dayKey(await $.clock.now())
-    const days = streak(counts, today)
     const { Box, Button, Text } = $.ui.resolve(e)
 
     const words = (
       <Box>
         <Text bold>{activity.title}</Text>
-        <Text dimColor> {e.props.isWorking ? '(Claude is still working) ' : ''}{activity.detail} </Text>
-        <Button key="done" label={`Done (${doneOn(counts, today)} today)`} onPress={() => handled($, ctx, 'done')} />
+        <Text dimColor> {e.props.isWorking ? '(Claude is still working) ' : ''}{describe(activity)} </Text>
+        <Button key="done" label="Done" onPress={() => handled($, ctx, 'done')} />
         <Button key="snooze" label="In 5 min" onPress={() => handled($, ctx, 'snoozed')} />
         <Button key="skip" label="Skip" onPress={() => handled($, ctx, 'skipped')} />
-        {days > 0 ? (
-          <Text key="streak" dimColor>{` ${days}-day streak`}</Text>
-        ) : null}
       </Box>
     )
 
