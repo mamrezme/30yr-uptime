@@ -4,7 +4,7 @@ A Claude Code mod that turns the time you spend waiting on Claude into short mov
 
 > **Chin tucks** 10 reps: slide your head straight back, hold for 2 seconds. Resets your neck over your spine. Skip it and your head keeps drifting toward the monitor.
 
-Press Done when you have done it, In 5 min to put it off for five minutes, or Skip to dismiss it. Everything shows inside the terminal; there are no system notifications.
+Press Done when you have done it, In 5 min to put it off for five minutes, or Skip to dismiss it. Type [`/break`](#the-break-command) to take one now, or `/break off` to pause the reminders. Everything shows inside the terminal; there are no system notifications.
 
 ![A figure doing squats above the spinner while Claude works](assets/preview.gif)
 
@@ -15,6 +15,16 @@ Each break is acted out by a small ASCII figure, in the spirit of Claude Code's 
 Only one break shows at a time: a new one never replaces a break you have not answered, and a long-turn break waits at least 5 minutes after the previous one, so you don't get two in a row.
 
 Each break is picked at random from the moves you have on, never the same move twice in a row (unless only one is on). **In 5 min** hides the break and brings the same one back five minutes later, whether Claude is working or not; nothing else is suggested meanwhile.
+
+## The `/break` command
+
+| Command | What it does |
+| --- | --- |
+| `/break` | Starts a break now, with its animation: a random move among the ones you have on. If a break is already on show, it stays and the command says so. |
+| `/break off` | Turns the reminders off, in this session and the next ones, until `/break on`. A snoozed break is dropped. `/break` still starts a break when you ask for one. |
+| `/break on` | Turns the reminders back on. The wait starts over from that moment, so no reminder shows straight away. |
+
+`/break` runs at once, even while Claude is working. Whether reminders are off is the only thing the mod writes to its store; Done, Skip and In 5 min keep no record.
 
 ## The moves
 

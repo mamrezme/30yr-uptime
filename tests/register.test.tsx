@@ -43,10 +43,16 @@ function engineWithStore(on: On, stored: Record<string, unknown>) {
     writes.push({ key: e.key, value: e.value })
     return { value: undefined }
   })
+  on('store.delete', (_, e) => {
+    data.delete(e.key)
+    writes.push({ key: e.key, value: undefined })
+    return { value: undefined }
+  })
   return { clock: withEngine(on, clock), writes }
 }
 
 function withEngine(on: On, clock: ReturnType<typeof mock.clock>) {
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
@@ -383,3 +389,130 @@ test(
     expect(await bandTitle($, 'terminal')).toBe('engine')
   },
 )
+
+const runBreak = async ($: Engine, args?: string) =>
+  (
+    await $.command.run({
+      command: 'break',
+      args: args ?? '',
+      origin: { kind: 'composer' },
+      presentation: { isFullscreen: false, columns: 100 },
+    })
+  ).text ?? ''
+
+test('/break is registered as a slash command', async ($, on) => {
+  const registered: string[] = []
+  on('command.register', (_, e) => {
+    registered.push(`${e.name} ${e.argumentHint ?? ''}`)
+    return { value: { command: e.name } }
+  })
+  mock.clock(on)
+  mock.store(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(registered).toEqual(['break [off|on]'])
+})
+
+test('/break starts a break now, with its scene, on every surface', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+
+  const text = await runBreak($)
+  const title = await bandTitle($, 'terminal')
+  expect(isBreak(title)).toBe(true)
+  expect(text).toBe(`Break: ${title}.`)
+  for (const surface of SURFACES) expect(await bandTitle($, surface)).toBe(title)
+
+  const idle = { ...BAND, props: { ...BAND.props, isWorking: false } }
+  const ui = await $.ui.mount({ ...idle, surface: 'terminal' })
+  expect(await ui.find({ type: 'Raster', key: 'scene' })).not.toBe(undefined)
+  await ui.press({ key: 'done' })
+  await ui.unmount()
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+})
+
+test('/break while a break is on show keeps it and says so', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await runBreak($)
+  const first = await bandTitle($, 'terminal')
+  expect(await runBreak($)).toContain(`already on show: ${first}`)
+  expect(await bandTitle($, 'terminal')).toBe(first)
+})
+
+test(
+  '/break picks only among the moves turned on, and says so when none is',
+  { options: Object.fromEntries(MOVES.map(m => [m, false])) },
+  async ($, on) => {
+    engine(on)
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    expect(await runBreak($)).toContain('Every move is turned off')
+    expect(await bandTitle($, 'terminal')).toBe('engine')
+  },
+)
+
+test(
+  '/break with one move on shows that move',
+  { options: Object.fromEntries(MOVES.filter(m => m !== 'water').map(m => [m, false])) },
+  async ($, on) => {
+    engine(on)
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    expect(await runBreak($)).toBe('Break: Drink water.')
+  },
+)
+
+test('/break off stops reminders, /break still works, /break on brings them back', async ($, on) => {
+  const { clock, writes } = engineWithStore(on, {})
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  expect(await runBreak($, 'off')).toContain('off')
+  expect(writes).toEqual([{ key: 'paused', value: true }])
+  await startTurn($, 't1')
+  await clock.advance(2 * 60 * 60_000)
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+
+  // Asked for by name, a break still shows while paused.
+  await runBreak($)
+  expect(isBreak(await bandTitle($, 'terminal'))).toBe(true)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'skip' })
+  await ui.unmount()
+  await endTurn($, 't1')
+
+  expect(await runBreak($, ' ON ')).toBe('Break reminders are back on.')
+  expect(writes.at(-1)).toEqual({ key: 'paused', value: undefined })
+  // The wait starts over from /break on: no reminder straight away.
+  await clock.advance(60_000)
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+  await clock.advance(30 * 60_000)
+  expect(isBreak(await bandTitle($, 'terminal'))).toBe(true)
+  expect(await runBreak($, 'on')).toBe('Break reminders are already on.')
+})
+
+test('/break off lasts into the next session', async ($, on) => {
+  const clock = engine(on, { paused: true })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await startTurn($, 't1')
+  await clock.advance(2 * 60 * 60_000)
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+})
+
+test('/break off drops a snoozed break', async ($, on) => {
+  const clock = engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await runBreak($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'snooze' })
+  await ui.unmount()
+  await runBreak($, 'off')
+  await clock.advance(10 * 60_000)
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+})
+
+test('/break with anything else prints the usage and shows nothing', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(await runBreak($, 'stats')).toContain('Usage: /break')
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+})
