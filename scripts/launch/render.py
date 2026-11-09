@@ -129,30 +129,68 @@ def centered(d, text, y, f, fill):
     d.text(((d.im.size[0] - tw) / 2, y), text, font=f, fill=fill)
 
 
-def end_card(w, h, k=1.0):
+def rounded_icon(px):
+    ic = icon(px)
+    m = Image.new('L', ic.size, 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, ic.width - 1, ic.height - 1], max(2, ic.width // 6), fill=255)
+    return ic, m
+
+
+def fit(d, text, name, size, maxw):
+    """The font `name` at `size`, shrunk until `text` fits in `maxw` pixels."""
+    while size > 8 and d.textlength(text, font=F(name, size)) > maxw:
+        size -= 1
+    return F(name, size)
+
+
+def brand(im, x, y, size):
+    """The product icon and name side by side; `size` is the icon's side. Returns the right edge."""
+    ic, m = rounded_icon(size)
+    im.paste(ic, (int(x), int(y)), m)
+    d = ImageDraw.Draw(im)
+    f = F(INTER_XB, int(size * 0.62))
+    tx = x + size * 1.22
+    d.text((tx, y + size / 2), '30yr-uptime', font=f, fill=CREAM, anchor='lm')
+    return tx + d.textlength('30yr-uptime', font=f)
+
+
+JOKE = 'Under 30? Keep coding like this and your first outage is scheduled for your 30th birthday.'
+
+
+def end_card(w, h):
     im = backdrop(w, h)
     d = ImageDraw.Draw(im)
-    ic = icon(int(h * 0.26))
-    m = Image.new('L', ic.size, 0)
-    ImageDraw.Draw(m).rounded_rectangle([0, 0, ic.width - 1, ic.height - 1], ic.width // 6, fill=255)
-    im.paste(ic, ((w - ic.width) // 2, int(h * 0.1)), m)
-    centered(d, '30yr-uptime', h * 0.40, F(INTER_XB, int(h * 0.11)), CREAM)
-    centered(d, 'Movement breaks while Claude Code works', h * 0.55, F(INTER_M, int(h * 0.045)), MUTED)
+    ic, m = rounded_icon(int(h * 0.2))
+    im.paste(ic, ((w - ic.width) // 2, int(h * 0.07)), m)
+    centered(d, '30yr-uptime', h * 0.30, F(INTER_XB, int(h * 0.1)), CREAM)
+    centered(d, '99.9% uptime for your body. For the next 30 years.', h * 0.45, F(INTER_SB, int(h * 0.045)), ORANGE)
+    centered(d, JOKE, h * 0.53, fit(d, JOKE, INTER_M, int(h * 0.031), w * 0.86), MUTED)
     f = F(MONO, int(h * 0.033))
     cmd = 'github.com/mamrezme/30yr-uptime'
     tw = d.textlength(cmd, font=f)
-    x, y = (w - tw) / 2, h * 0.68
+    x, y = (w - tw) / 2, h * 0.67
     d.rounded_rectangle([x - 24, y - 16, x + tw + 24, y + h * 0.033 + 18], 10, fill=TERM_BG, outline=(0x3a, 0x3a, 0x40))
     d.text((x, y), cmd, font=f, fill=CREAM)
-    centered(d, 'Free & open source  ·  runs locally  ·  zero tokens', h * 0.83, F(INTER_M, int(h * 0.034)), ORANGE)
+    centered(d, 'Free & open source  ·  runs locally  ·  zero tokens', h * 0.83, F(INTER_M, int(h * 0.034)), MUTED)
     return im
 
 
 def hook_card(w, h):
     im = backdrop(w, h)
     d = ImageDraw.Draw(im)
-    centered(d, 'Your code has 99.9% uptime.', h * 0.36, F(INTER_XB, int(h * 0.075)), CREAM)
-    centered(d, 'Does your back?', h * 0.50, F(INTER_XB, int(h * 0.075)), ORANGE)
+    centered(d, 'Your servers: 99.9% uptime.', h * 0.34, F(INTER_XB, int(h * 0.075)), CREAM)
+    centered(d, 'Your spine: no SLA.', h * 0.48, F(INTER_XB, int(h * 0.075)), ORANGE)
+    return im
+
+
+def title_card(w, h):
+    im = backdrop(w, h)
+    d = ImageDraw.Draw(im)
+    size = int(h * 0.14)
+    f = F(INTER_XB, int(size * 0.62))
+    total = size * 1.22 + d.textlength('30yr-uptime', font=f)
+    brand(im, (w - total) / 2, h * 0.3, size)
+    centered(d, 'Keep your body at 99.9% uptime for the next 30 years.', h * 0.56, F(INTER_SB, int(h * 0.045)), MUTED)
     return im
 
 
@@ -174,7 +212,7 @@ def video():
     term = Term()
     W, H = 1280, 720
     bg = backdrop(W, H)
-    hook, end = hook_card(W, H), end_card(W, H)
+    hook, title, end = hook_card(W, H), title_card(W, H), end_card(W, H)
     mp4 = os.path.join(OUT, 'demo.mp4')
     p = subprocess.Popen([FF, '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(fps), '-i', '-',
                           '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4], stdin=subprocess.PIPE)
@@ -184,7 +222,11 @@ def video():
     for i in range(HOOK):
         put(hook)
     for i in range(FADE):
-        put(Image.blend(hook, first, i / FADE))
+        put(Image.blend(hook, title, i / FADE))
+    for i in range(int(1.5 * fps)):
+        put(title)
+    for i in range(FADE):
+        put(Image.blend(title, first, i / FADE))
     last = None
     for n, fr in enumerate(frames):
         last = demo_frame(term, fr, W, H, bg)
@@ -193,7 +235,7 @@ def video():
             print('frame', n, '/', len(frames), file=sys.stderr)
     for i in range(FADE):
         put(Image.blend(last, end, i / FADE))
-    for i in range(int(4.5 * fps)):
+    for i in range(int(5 * fps)):
         put(end)
     p.stdin.close()
     p.wait()
@@ -219,12 +261,18 @@ def stills():
     W, H = 1270, 760
     im = backdrop(W, H)
     d = ImageDraw.Draw(im)
-    d.text((70, 92), '30yr-uptime', font=F(INTER_XB, 78), fill=CREAM)
-    d.text((72, 196), 'Movement breaks while', font=F(INTER_B, 40), fill=CREAM)
-    d.text((72, 244), 'Claude Code works.', font=F(INTER_B, 40), fill=ORANGE)
+    brand(im, 70, 70, 70)
+    hf = F(INTER_XB, 46)
+    d.text((70, 180), '99.9% uptime for your body,', font=fit(d, '99.9% uptime for your body,', INTER_XB, 46, 540), fill=CREAM)
+    d.text((70, 236), 'for the next 30 years.', font=fit(d, '99.9% uptime for your body,', INTER_XB, 46, 540), fill=ORANGE)
     y = 330
-    for line in ['16 animated moves for neck, back,', 'hips, legs, wrists, eyes and lungs.', '', 'Free, open source, runs locally.', 'Zero tokens.']:
-        d.text((72, y), line, font=F(INTER_M, 25), fill=MUTED)
+    for line in ['Movement breaks while Claude Code works.', '16 animated moves for neck, back, hips,', 'legs, wrists, eyes and lungs.']:
+        d.text((72, y), line, font=F(INTER_M, 24), fill=MUTED)
+        y += 34
+    y += 30
+    d.rounded_rectangle([60, y - 14, 590, y + 82], 12, fill=(0x2a, 0x22, 0x1e), outline=(0x5a, 0x3a, 0x2e))
+    for line in ['Under 30? At this rate,', 'your back goes down at 30.']:
+        d.text((80, y), line, font=F(INTER_SB, 26), fill=ORANGE)
         y += 36
     fr = shot(12.2, cols=56, total=23)
     win = window(Term(10, 17, 15).draw(fr['rows']), title='claude')
@@ -249,7 +297,7 @@ def stills():
               'hamstring': 'Hamstrings', 'calf': 'Calf stretch', 'hipflexor': 'Hip flexors'}
     im = backdrop(W, H)
     d = ImageDraw.Draw(im)
-    centered(d, '16 moves, each framed on the part it works', 34, F(INTER_B, 34), CREAM)
+    centered(d, "16 moves. One for every part of you that's about to fail.", 34, F(INTER_B, 34), CREAM)
     cols, gx, gy, cw_, ch_ = 4, 24, 20, 284, 140
     x0 = (W - (cols * cw_ + (cols - 1) * gx)) // 2
     for i, (sid, t) in enumerate(scenes):
@@ -264,20 +312,21 @@ def stills():
     # 4. Gallery: how it works
     im = backdrop(W, H)
     d = ImageDraw.Draw(im)
-    centered(d, 'How it works', 50, F(INTER_XB, 46), CREAM)
+    centered(d, 'How it works', 40, F(INTER_XB, 46), CREAM)
     items = [('15s', 'A turn runs past 15s, or 30 min pass: a break shows up.'),
              ('/break', 'Want one now? /break. Need focus? /break off.'),
              ('Done', 'Done, In 5 min, or Skip. No streaks, no guilt, no stats.'),
              ('/break set', 'Pick your moves and timings: /break set squat off'),
              ('local', 'Runs in your terminal. No network, no model calls, zero tokens.')]
-    y = 150
+    y = 130
     for k, v in items:
         f = F(MONO, 26)
         d.rounded_rectangle([110, y, 300, y + 70], 12, fill=TERM_BG, outline=(0x5a, 0x3a, 0x2e))
         tw = d.textlength(k, font=f)
         d.text((205 - tw / 2, y + 35), k, font=f, fill=ORANGE, anchor='lm')
         d.text((340, y + 35), v, font=F(INTER_M, 27), fill=CREAM, anchor='lm')
-        y += 104
+        y += 100
+    centered(d, 'SLA: 99.9% uptime for 30 years. Your lower back included.', H - 72, F(INTER_SB, 28), ORANGE)
     im.save(os.path.join(OUT, 'ph-gallery-3-how.png'))
 
     # 5. Social: X 1600x900 and LinkedIn 1200x627
@@ -285,12 +334,17 @@ def stills():
         im = backdrop(W, H)
         d = ImageDraw.Draw(im)
         s = H / 900
-        d.text((int(80 * s), int(110 * s)), 'Your code has', font=F(INTER_XB, int(64 * s)), fill=CREAM)
-        d.text((int(80 * s), int(190 * s)), '99.9% uptime.', font=F(INTER_XB, int(64 * s)), fill=CREAM)
-        d.text((int(80 * s), int(270 * s)), 'Does your back?', font=F(INTER_XB, int(64 * s)), fill=ORANGE)
-        d.text((int(82 * s), int(400 * s)), '30yr-uptime: movement breaks', font=F(INTER_M, int(32 * s)), fill=MUTED)
-        d.text((int(82 * s), int(444 * s)), 'while Claude Code works.', font=F(INTER_M, int(32 * s)), fill=MUTED)
-        d.text((int(82 * s), int(540 * s)), 'github.com/mamrezme/30yr-uptime', font=F(MONO, int(26 * s)), fill=ORANGE)
+        X, maxw = int(80 * s), int(720 * s)
+        brand(im, X, int(70 * s), int(64 * s))
+        d.text((X, int(180 * s)), 'Your code has 99.9% uptime.', font=fit(d, 'Your code has 99.9% uptime.', INTER_XB, int(54 * s), maxw), fill=CREAM)
+        d.text((X, int(250 * s)), 'Your body should too,', font=fit(d, 'Your code has 99.9% uptime.', INTER_XB, int(54 * s), maxw), fill=ORANGE)
+        d.text((X, int(320 * s)), 'for the next 30 years.', font=fit(d, 'Your code has 99.9% uptime.', INTER_XB, int(54 * s), maxw), fill=ORANGE)
+        y = int(440 * s)
+        for line in ['Under 30 and shipping 10 hours a day in a chair?', "Your body's first outage is booked", 'for your 30th birthday.']:
+            d.text((X, y), line, font=F(INTER_M, int(28 * s)), fill=MUTED)
+            y += int(40 * s)
+        d.text((X, int(600 * s)), 'Movement breaks while Claude Code works.', font=F(INTER_SB, int(28 * s)), fill=CREAM)
+        d.text((X, int(670 * s)), 'github.com/mamrezme/30yr-uptime', font=F(MONO, int(26 * s)), fill=ORANGE)
         fr = shot(12.2, cols=56, total=23)
         win = window(Term(round(12 * s), round(20 * s), round(18 * s)).draw(fr['rows']), title='claude')
         shadowed(im, win, (W - win.width - int(60 * s), (H - win.height) // 2))
