@@ -10,7 +10,7 @@ The character is an unofficial fan take on Clawd, Claude Code's character; this 
 
 ![The character acting out each break above the spinner while Claude works](assets/preview.gif)
 
-| Move | `/config` key | What it is for |
+| Move | Setting key | What it is for |
 | --- | --- | --- |
 | Stand up | `stand` | Getting out of the chair |
 | Drink water | `water` | Hydration |
@@ -60,12 +60,16 @@ Needs Claude Code 2.1.287 or newer (mods are on by default from there); tested o
 | `/break` | Starts a break now, with its animation: a random move among the ones you have on. If a break is already on show, it stays and the command says so. |
 | `/break off` | Turns the reminders off, in this session and the next ones, until `/break on`. A snoozed break is dropped. `/break` still starts a break when you ask for one. |
 | `/break on` | Turns the reminders back on. The wait starts over from that moment, so no reminder shows straight away. |
+| `/break config` | Lists the settings as they apply now. |
+| `/break moves` | Lists every move, its key, and whether it is on. |
+| `/break set <key> <value>` | Changes a setting, e.g. `/break set waitSeconds 30` or `/break set squat off`. |
+| `/break reset [key]` | Puts one setting back to its default, or all of them with no key. |
 
-`/break` runs at once, even while Claude is working. Whether reminders are off is the only thing the mod writes to its store; Done, Skip and In 5 min keep no record.
+`/break` runs at once, even while Claude is working. The mod's store holds only whether reminders are off and the settings you changed; Done, Skip and In 5 min keep no record.
 
-## Settings (`/config`)
+## Settings
 
-All in `/config`, under 30yr-uptime:
+Installing asks nothing: every setting has a default and the mod works as it is. To change one, use `/break set` (see [the `/break` command](#the-break-command)); it applies at once and is kept for later sessions.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -73,16 +77,16 @@ All in `/config`, under 30yr-uptime:
 | `intervalMinutes` | 30 | Also remind you this often, even when Claude is idle. 1 to 1440; 0 turns interval reminders off. |
 | one key per move (see [the moves](#the-moves)) | on | Whether that move can be suggested. |
 
-Turn off the moves you can't or don't want to do; with every move off, no breaks are shown. An invalid number (negative, not a number) uses the default; a move is only turned off by an explicit off (`false`, `off`, `no`, `0`), so a bad value never removes breaks.
+Turn off the moves you can't or don't want to do (`/break set squat off`); with every move off, no breaks are shown. `/break set` refuses a value that is not a number (or a negative one) and a move value other than on or off (`on`/`off`, `true`/`false`, `yes`/`no`, `1`/`0`), and clamps a number to its range. Changing a setting keeps the break on show and a snoozed one.
 
-Changing a setting reloads the mod: a break on show stays, but a snoozed one is dropped, and the next pick may repeat the last move once.
+The settings are not in `/config`: Claude Code counts every `/config` option of a plugin as "not yet set" after install, even one with a default, and asks you to configure it. Values set in `/config` for 0.1.0 are not carried over; set them again with `/break set`.
 
 ## What the hooks do
 
 `hooks/register.tsx` hooks six events. It reads them and draws; it never changes what Claude sees or sends:
 
-- `session.start`: reads whether you turned reminders off, checks `NO_COLOR`, registers `/break`, and in an interactive session starts a 5-second timer that decides when a break is due.
-- `command.run` for `/break`: starts a break now, or turns the reminders off or on and remembers that choice.
+- `session.start`: reads whether you turned reminders off and the settings you changed, checks `NO_COLOR`, registers `/break`, and in an interactive session starts a 5-second timer that decides when a break is due.
+- `command.run` for `/break`: starts a break now, turns the reminders off or on, or shows and changes the settings, and remembers those choices.
 - `turn.start`: notes when Claude's main turn began, so a long turn can be spotted (a subagent's turn doesn't count).
 - `turn.complete`: notes that the main turn ended and takes the scene off the spinner.
 - `ui.render` on `Spinner`: while a break is on show and Claude works, draws its scene above the spinner line and leaves the spinner as it is. Below 54 columns, or outside the terminal, it hands the spinner back unchanged.
@@ -92,4 +96,4 @@ While a scene is on screen, a timer repaints it about 12 times a second; it stop
 
 ## Privacy: what data it sends
 
-None. The mod makes no network requests and no model calls, so it uses none of your tokens. It doesn't read your prompts, Claude's replies, your files or your code: it only sees when a turn starts and ends, the terminal size, and `NO_COLOR`. Every line of text is written into the mod; none is generated. It stores one thing, whether you ran `/break off` (`paused`, in Claude Code's own plugin store), and keeps no record of the breaks you took or skipped. There is no server, so there is no privacy policy to link.
+None. The mod makes no network requests and no model calls, so it uses none of your tokens. It doesn't read your prompts, Claude's replies, your files or your code: it only sees when a turn starts and ends, the terminal size, and `NO_COLOR`. Every line of text is written into the mod; none is generated. It stores two things in Claude Code's own plugin store: whether you ran `/break off` (`paused`) and the settings you changed with `/break set` (`settings`). It keeps no record of the breaks you took or skipped. There is no server, so there is no privacy policy to link.

@@ -25,6 +25,9 @@ const SURFACES = ['terminal', 'desktop'] as const
 const TITLES: readonly (string | undefined)[] = ACTIVITIES.map(a => a.title)
 const isBreak = (title: string | undefined) => TITLES.includes(title)
 
+/** Stored settings with only `keep` on (none when not given), as /break set leaves them. */
+const only = (...keep: string[]) => ({ settings: Object.fromEntries(MOVES.filter(m => !keep.includes(m)).map(m => [m, false])) })
+
 /** The engine beneath the plugin: a mocked clock, an in-memory store and plain answers. */
 function engine(on: On, stored?: Record<string, unknown>, env?: Record<string, string>) {
   const clock = mock.clock(on)
@@ -210,8 +213,8 @@ test('no reminders in a non-interactive run', async ($, on) => {
   expect(await bandTitle($, 'terminal')).toBe('engine')
 })
 
-test('invalid settings fall back to defaults instead of disabling nudges', { options: { waitSeconds: -3 } }, async ($, on) => {
-  const clock = engine(on)
+test('invalid settings fall back to defaults instead of disabling nudges', async ($, on) => {
+  const clock = engine(on, { settings: { waitSeconds: -3 } })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await startTurn($, 't1')
   await clock.advance(25_000)
@@ -225,8 +228,8 @@ const SPINNER = {
 } as const
 
 /** Starts a session and a long turn, so a break shows. */
-async function breakDuringTurn($: Engine, on: On) {
-  const clock = engine(on)
+async function breakDuringTurn($: Engine, on: On, stored?: Record<string, unknown>) {
+  const clock = engine(on, stored)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await startTurn($, 't1')
   await clock.advance(25_000)
@@ -252,14 +255,13 @@ test('while Claude works, the scene plays above the spinner, which stays', async
 test(
   'the scene is repainted in place about 12 times a second',
   // The walker moves every 140ms; holds only change once a second.
-  { options: Object.fromEntries(MOVES.filter(m => m !== 'walk').map(m => [m, false])) },
   async ($, on) => {
     const blits: string[] = []
     on('ui.blit', (_, e, next) => {
       if ('cells' in e) blits.push(e.cells)
       return next(e)
     })
-    const clock = await breakDuringTurn($, on)
+    const clock = await breakDuringTurn($, on, only('walk'))
     const ui = await $.ui.mount({ ...SPINNER, surface: 'terminal', viewport: { columns: 100, rows: 40 } })
     await clock.advance(2_000)
     // A frame is sent only when it changed: some, never more than 2s of ticks,
@@ -375,10 +377,9 @@ test('In 5 min hides the break and brings the same one back 5 minutes later', as
 })
 
 test(
-  'a move turned off in /config is never suggested',
-  { options: Object.fromEntries(MOVES.filter(m => m !== 'walk').map(m => [m, false])) },
+  'a move turned off is never suggested',
   async ($, on) => {
-    const clock = engine(on)
+    const clock = engine(on, only('walk'))
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     for (let i = 0; i < 4; i++) {
       await clock.advance(30 * 60_000)
@@ -392,9 +393,8 @@ test(
 
 test(
   'every move off: no breaks at all',
-  { options: Object.fromEntries(MOVES.map(m => [m, false])) },
   async ($, on) => {
-    const clock = engine(on)
+    const clock = engine(on, only())
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     await startTurn($, 't1')
     await clock.advance(3 * 60 * 60_000)
@@ -422,7 +422,7 @@ test('/break is registered as a slash command', async ($, on) => {
   mock.store(on)
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  expect(registered).toEqual(['break [off|on]'])
+  expect(registered).toEqual(['break [off|on|config|moves|set <key> <value>|reset [key]]'])
 })
 
 test('/break starts a break now, with its scene, on every surface', async ($, on) => {
@@ -455,9 +455,8 @@ test('/break while a break is on show keeps it and says so', async ($, on) => {
 
 test(
   '/break picks only among the moves turned on, and says so when none is',
-  { options: Object.fromEntries(MOVES.map(m => [m, false])) },
   async ($, on) => {
-    engine(on)
+    engine(on, only())
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     expect(await runBreak($)).toContain('Every move is turned off')
     expect(await bandTitle($, 'terminal')).toBe('engine')
@@ -466,9 +465,8 @@ test(
 
 test(
   '/break with one move on shows that move',
-  { options: Object.fromEntries(MOVES.filter(m => m !== 'water').map(m => [m, false])) },
   async ($, on) => {
-    engine(on)
+    engine(on, only('water'))
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     expect(await runBreak($)).toBe('Break: Drink water.')
   },
@@ -552,3 +550,91 @@ for (const [name, env, plain] of [
     await ui.unmount()
   })
 }
+
+test('settings kept by /break set apply from the next session on', async ($, on) => {
+  const clock = engine(on, { settings: { ...only('walk').settings, intervalMinutes: 0 } })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  // Interval reminders are off: an idle hour shows nothing.
+  await clock.advance(60 * 60_000)
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+  await startTurn($, 't1')
+  await clock.advance(25_000)
+  expect(await bandTitle($, 'terminal')).toBe('Walk')
+})
+
+test('/break set changes a setting at once and keeps it in the store', async ($, on) => {
+  const { clock, writes } = engineWithStore(on, {})
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  expect(await runBreak($, 'set waitSeconds 60')).toBe('waitSeconds is now 60.')
+  expect(await runBreak($, 'set SQUAT off')).toBe('squat is now off.')
+  expect(writes).toEqual([
+    { key: 'settings', value: { waitSeconds: 60 } },
+    { key: 'settings', value: { waitSeconds: 60, squat: false } },
+  ])
+
+  // 25 seconds into a turn is no longer enough; a minute is.
+  await startTurn($, 't1')
+  await clock.advance(25_000)
+  expect(await bandTitle($, 'terminal')).toBe('engine')
+  await clock.advance(40_000)
+  expect(isBreak(await bandTitle($, 'terminal'))).toBe(true)
+
+  const moves = await runBreak($, 'moves')
+  expect(moves).toContain('off  squat (Squats)')
+  expect(moves).toContain('on   walk (Walk)')
+  expect(await runBreak($, 'config')).toContain('waitSeconds      60\n')
+  expect(await runBreak($, 'config')).toContain('15 of 16 on')
+})
+
+test('/break set refuses a bad key or value and stores nothing', async ($, on) => {
+  const { writes } = engineWithStore(on, {})
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(await runBreak($, 'set waitSeconds soon')).toContain('1 to 3600')
+  expect(await runBreak($, 'set waitSeconds -3')).toContain('1 to 3600')
+  expect(await runBreak($, 'set intervalMinutes x')).toContain('0 for off')
+  expect(await runBreak($, 'set squat maybe')).toBe('squat takes on or off.')
+  expect(await runBreak($, 'set pushups off')).toContain('No setting called pushups')
+  expect(await runBreak($, 'set waitSeconds')).toContain('Usage: /break set')
+  expect(writes).toEqual([])
+})
+
+test('/break set clamps to the range, as the settings always did', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(await runBreak($, 'set waitSeconds 99999')).toBe('waitSeconds is now 3600.')
+  expect(await runBreak($, 'set intervalMinutes 0')).toBe('intervalMinutes is now 0.')
+  expect(await runBreak($, 'config')).toContain('0 (off)')
+})
+
+test('/break reset puts one setting or all of them back to the default', async ($, on) => {
+  const { writes } = engineWithStore(on, { settings: { waitSeconds: 60, squat: false } })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(await runBreak($, 'reset squat')).toBe('squat is back to its default.')
+  expect(writes.at(-1)).toEqual({ key: 'settings', value: { waitSeconds: 60 } })
+  expect(await runBreak($, 'reset')).toBe('Every setting is back to its default.')
+  expect(writes.at(-1)).toEqual({ key: 'settings', value: undefined })
+  expect(await runBreak($, 'config')).toContain('waitSeconds      15 (default)')
+  expect(await runBreak($, 'config')).toContain('16 of 16 on')
+})
+
+test('/break set keeps a snoozed break', async ($, on) => {
+  const clock = engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await runBreak($)
+  const first = await bandTitle($, 'terminal')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'snooze' })
+  await ui.unmount()
+  await runBreak($, 'set waitSeconds 30')
+  await clock.advance(5 * 60_000 + 5_000)
+  expect(await bandTitle($, 'terminal')).toBe(first)
+})
+
+test('a stored blob that is not settings is ignored', async ($, on) => {
+  const clock = engine(on, { settings: 'garbage' })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await startTurn($, 't1')
+  await clock.advance(25_000)
+  expect(isBreak(await bandTitle($, 'terminal'))).toBe(true)
+})
