@@ -8,6 +8,9 @@ import {
   readEnabled,
   readSettings,
   readWaitSeconds,
+  findKey,
+  parseSetting,
+  toRaw,
 } from '../hooks/settings'
 
 test('waitSeconds: valid numbers pass through', () => {
@@ -75,4 +78,36 @@ test('every move is on unless its option is turned off', () => {
 test('readEnabled: only an explicit off turns a move off', () => {
   for (const off of [false, 0, 'false', 'off', 'no', '0', ' Off ']) expect(readEnabled(off)).toBe(false)
   for (const on of [true, undefined, null, 1, 'true', 'on', '', 'banana', ['x']]) expect(readEnabled(on)).toBe(true)
+})
+
+test('parseSetting: numbers in range are stored, clamped like the readers', () => {
+  expect(parseSetting('waitSeconds', '30')).toEqual({ value: 30 })
+  expect(parseSetting('waitSeconds', '0')).toEqual({ value: 1 })
+  expect(parseSetting('waitSeconds', '1e9')).toEqual({ value: 3600 })
+  expect(parseSetting('intervalMinutes', '0')).toEqual({ value: 0 })
+  expect(parseSetting('intervalMinutes', '99999')).toEqual({ value: 1440 })
+})
+
+test('parseSetting: what the readers would turn into the default is refused', () => {
+  for (const bad of ['', 'x', '-1', 'NaN', 'Infinity']) {
+    expect('error' in parseSetting('waitSeconds', bad)).toBe(true)
+    expect('error' in parseSetting('intervalMinutes', bad)).toBe(true)
+  }
+})
+
+test('parseSetting: a move takes on or off, in the words readEnabled knows', () => {
+  for (const on of ['on', 'TRUE', 'yes', '1']) expect(parseSetting('squat', on)).toEqual({ value: true })
+  for (const off of ['off', 'False', 'no', '0']) expect(parseSetting('squat', off)).toEqual({ value: false })
+  expect('error' in parseSetting('squat', 'banana')).toBe(true)
+})
+
+test('findKey: case-insensitive, unknown keys are undefined', () => {
+  expect(findKey('WAITSECONDS')).toBe('waitSeconds')
+  expect(findKey('hipFlexor')).toBe('hipflexor')
+  expect(findKey('pushups')).toBe(undefined)
+})
+
+test('toRaw: only a plain object is read as settings', () => {
+  for (const bad of [undefined, null, 'x', 3, ['a']]) expect(toRaw(bad)).toEqual({})
+  expect(toRaw({ squat: false })).toEqual({ squat: false })
 })

@@ -1,6 +1,5 @@
-import type { PluginOptions } from 'claude-code'
-
 import type { SceneId } from '../types'
+import { ACTIVITIES } from './activities'
 import { SCENE_IDS } from './scenes'
 
 export const DEFAULT_WAIT_SECONDS = 15
@@ -14,11 +13,11 @@ export type Settings = {
   waitMs: number
   /** How often to remind regardless of turns; 0 means off. */
   intervalMs: number
-  /** The moves a break may suggest, each turned on or off in /config. */
+  /** The moves a break may suggest, each turned on or off with /break set. */
   enabled: ReadonlySet<SceneId>
 }
 
-/** Each move's /config option is named after its scene. */
+/** Each move's setting is named after its scene. */
 export const MOVES: readonly SceneId[] = SCENE_IDS
 
 /**
@@ -70,10 +69,84 @@ export function readEnabled(value: unknown): boolean {
   return true
 }
 
-export function readSettings(options: PluginOptions): Settings {
+/**
+ * The stored settings: only what a person changed, by key. Kept in the mod's
+ * own `$.store` (not the manifest's `userConfig`), so installing asks nothing.
+ */
+export type RawSettings = Readonly<Record<string, unknown>>
+
+export function readSettings(options: RawSettings): Settings {
   return {
     waitMs: readWaitSeconds(options.waitSeconds) * 1000,
     intervalMs: readIntervalMinutes(options.intervalMinutes) * 60_000,
     enabled: new Set(MOVES.filter(m => readEnabled(options[m]))),
   }
+}
+
+/** The `$.store` key the settings are kept under. */
+export const SETTINGS_KEY = 'settings'
+
+export const NUMBER_KEYS = ['waitSeconds', 'intervalMinutes'] as const
+export type SettingKey = (typeof NUMBER_KEYS)[number] | SceneId
+export const SETTING_KEYS: readonly SettingKey[] = [...NUMBER_KEYS, ...MOVES]
+
+/** A setting's key as typed: case does not matter. */
+export function findKey(typed: string): SettingKey | undefined {
+  const t = typed.trim().toLowerCase()
+  return SETTING_KEYS.find(k => k.toLowerCase() === t)
+}
+
+/** What a stored blob holds, as settings: anything but a plain object is none. */
+export function toRaw(stored: unknown): Record<string, unknown> {
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return {}
+  return { ...(stored as Record<string, unknown>) }
+}
+
+const ON = ['on', 'true', 'yes', '1']
+const OFF = ['off', 'false', 'no', '0']
+
+/**
+ * The value `/break set <key> <value>` stores, already in range, or why it is
+ * refused. The readers above stay the judges: a value is only accepted when
+ * they read it as given (after clamping), never silently as the default.
+ */
+export function parseSetting(key: SettingKey, typed: string): { value: number | boolean } | { error: string } {
+  const t = typed.trim().toLowerCase()
+  if (key === 'waitSeconds' || key === 'intervalMinutes') {
+    const n = t === '' ? NaN : Number(t)
+    if (!Number.isFinite(n) || n < 0) {
+      return {
+        error:
+          key === 'waitSeconds'
+            ? 'waitSeconds takes a number of seconds, 1 to 3600.'
+            : 'intervalMinutes takes a number of minutes, 1 to 1440, or 0 for off.',
+      }
+    }
+    return { value: key === 'waitSeconds' ? readWaitSeconds(n) : readIntervalMinutes(n) }
+  }
+  if (ON.includes(t)) return { value: true }
+  if (OFF.includes(t)) return { value: false }
+  return { error: `${key} takes on or off.` }
+}
+
+const TITLES = new Map(ACTIVITIES.map(a => [a.scene, a.title]))
+
+/** `/break moves`: every move, its key and whether it is on. */
+export function describeMoves(settings: Settings): string {
+  const rows = MOVES.map(m => `${settings.enabled.has(m) ? 'on ' : 'off'}  ${m} (${TITLES.get(m) ?? m})`)
+  return ['Moves (/break set <key> on|off):', ...rows].join('\n')
+}
+
+/** `/break config`: every setting as it applies now. */
+export function describeSettings(settings: Settings): string {
+  const wait = settings.waitMs / 1000
+  const interval = settings.intervalMs / 60_000
+  return [
+    'Settings:',
+    `waitSeconds      ${wait}${wait === DEFAULT_WAIT_SECONDS ? ' (default)' : ''}`,
+    `intervalMinutes  ${interval === 0 ? '0 (off)' : interval}${interval === DEFAULT_INTERVAL_MINUTES ? ' (default)' : ''}`,
+    `moves            ${settings.enabled.size} of ${MOVES.length} on (/break moves lists them)`,
+    '',
+    'Change one: /break set waitSeconds 30, /break set squat off. Undo: /break reset [key].',
+  ].join('\n')
 }

@@ -7,7 +7,15 @@ import { pickActivity } from './pick'
 import { afterHandled, afterNudge, afterSnooze, decide, initialState, turnEnded, turnStarted } from './schedule'
 import type { ScheduleState } from './schedule'
 import { drawScene, EDGE, encode, hasScene, ROWS, sceneWidth } from './scenes'
-import { readSettings } from './settings'
+import {
+  describeMoves,
+  describeSettings,
+  findKey,
+  parseSetting,
+  readSettings,
+  SETTINGS_KEY,
+  toRaw,
+} from './settings'
 import type { Settings } from './settings'
 
 const current = atom({ plugin: '30yr-uptime', key: 'current' } as const, null)
@@ -18,7 +26,11 @@ const SCENE_KEY = 'scene'
 /** The `$.store` key `/break off` sets: reminders stay off across sessions. */
 const PAUSED_KEY = 'paused'
 const COMMAND = 'break'
-const USAGE = 'Usage: /break (a break now), /break off (pause reminders), /break on (resume them).'
+const USAGE = [
+  'Usage: /break (a break now), /break off (pause reminders), /break on (resume them),',
+  '/break config (the settings), /break moves (each move, on or off),',
+  '/break set <key> <value> (e.g. /break set waitSeconds 30, /break set squat off), /break reset [key].',
+].join('\n')
 
 /** A drawn scene the frame timer repaints in place. */
 type Mount = { requestId: string; width: number; site: 'spinner' | 'band'; last: string }
@@ -26,6 +38,8 @@ type Mount = { requestId: string; width: number; site: 'spinner' | 'band'; last:
 /** What one loaded module keeps between hooks; a reload starts it over. */
 type Context = {
   settings: Settings
+  /** What `/break set` changed, as kept in `$.store`; the rest is the defaults. */
+  stored: Record<string, unknown>
   state: ScheduleState
   /** The move shown last, so the next pick is a different one. */
   lastScene: SceneId | null
@@ -79,7 +93,7 @@ async function paint($: EngineInterface, ctx: Context) {
   }
 }
 
-/** The moves turned on in /config. */
+/** The moves turned on. */
 function pool(ctx: Context): Activity[] {
   return ACTIVITIES.filter(a => a.scene !== undefined && ctx.settings.enabled.has(a.scene))
 }
@@ -107,17 +121,73 @@ async function tick($: EngineInterface, ctx: Context) {
     reason === 'snooze' && ctx.snoozed !== null ? ctx.snoozed : pickActivity(pool(ctx), ctx.lastScene, ctx.random)
   ctx.snoozed = null
   if (activity === null) {
-    // Every move is off in /config: nothing to suggest.
+    // Every move is off: nothing to suggest.
     ctx.state = afterNudge(ctx.state, now)
     return
   }
   await show($, ctx, activity, now)
 }
 
-/** `/break`, `/break off`, `/break on`: the command's answer as one line. */
+/** Reads the settings `/break set` kept. */
+async function loadSettings($: EngineInterface, ctx: Context) {
+  ctx.stored = toRaw(await $.store.get(SETTINGS_KEY))
+  ctx.settings = readSettings(ctx.stored)
+}
+
+/** Keeps `stored` and applies it at once: no reload, a snoozed break stays. */
+async function saveSettings($: EngineInterface, ctx: Context, stored: Record<string, unknown>) {
+  // Stored first: if the write fails, this session keeps the old settings too.
+  if (Object.keys(stored).length === 0) await $.store.delete(SETTINGS_KEY)
+  else await $.store.set(SETTINGS_KEY, stored)
+  ctx.stored = stored
+  ctx.settings = readSettings(stored)
+}
+
+/** `/break config`, `moves`, `set` and `reset`; null when `words` is none of them. */
+async function runSettings($: EngineInterface, ctx: Context, words: string[]): Promise<string | null> {
+  const [verb = '', key = '', ...rest] = words
+  switch (verb.toLowerCase()) {
+    case 'config':
+    case 'settings':
+      return words.length === 1 ? describeSettings(ctx.settings) : USAGE
+    case 'moves':
+      return words.length === 1 ? describeMoves(ctx.settings) : USAGE
+    case 'set': {
+      const found = findKey(key)
+      if (found === undefined || rest.length !== 1) {
+        return found === undefined && key !== ''
+          ? `No setting called ${key}. /break config and /break moves list them.`
+          : 'Usage: /break set <key> <value>, e.g. /break set waitSeconds 30 or /break set squat off.'
+      }
+      const parsed = parseSetting(found, rest[0]!)
+      if ('error' in parsed) return parsed.error
+      await saveSettings($, ctx, { ...ctx.stored, [found]: parsed.value })
+      return `${found} is now ${typeof parsed.value === 'boolean' ? (parsed.value ? 'on' : 'off') : parsed.value}.`
+    }
+    case 'reset': {
+      if (words.length === 1) {
+        await saveSettings($, ctx, {})
+        return 'Every setting is back to its default.'
+      }
+      const found = findKey(key)
+      if (found === undefined || rest.length !== 0) return `No setting called ${key}. /break config and /break moves list them.`
+      const { [found]: _, ...others } = ctx.stored
+      await saveSettings($, ctx, others)
+      return `${found} is back to its default.`
+    }
+    default:
+      return null
+  }
+}
+
+/** `/break`, `/break off`, `/break on` and the settings: the command's answer. */
 async function runCommand($: EngineInterface, ctx: Context, args: string): Promise<string> {
-  const arg = args.trim().toLowerCase()
+  const words = args.trim().split(/\s+/).filter(w => w !== '')
+  const arg = words.length === 1 ? words[0]!.toLowerCase() : words.length === 0 ? '' : '-'
   const now = await $.clock.now()
+
+  const settings = await runSettings($, ctx, words)
+  if (settings !== null) return settings
 
   if (arg === 'off') {
     ctx.paused = true
@@ -144,7 +214,7 @@ async function runCommand($: EngineInterface, ctx: Context, args: string): Promi
   if (pending !== null) return `A break is already on show: ${pending.title}. Press Done, In 5 min or Skip first.`
 
   const activity = pickActivity(pool(ctx), ctx.lastScene, ctx.random)
-  if (activity === null) return 'Every move is turned off in /config: turn one on to take a break.'
+  if (activity === null) return 'Every move is turned off: turn one on (/break set <move> on) to take a break.'
   ctx.snoozed = null
   await show($, ctx, activity, now)
   return `Break: ${activity.title}.`
@@ -191,9 +261,12 @@ async function sceneFor(
   return cells
 }
 
-export const register: Register = (on, options) => {
+// No `userConfig`: an option there counts as "not yet set" at install even
+// with a default, so the settings live in `$.store` and `/break set` instead.
+export const register: Register = on => {
   const ctx: Context = {
-    settings: readSettings(options),
+    settings: readSettings({}),
+    stored: {},
     state: initialState(0),
     lastScene: null,
     snoozed: null,
@@ -216,6 +289,7 @@ export const register: Register = (on, options) => {
     ctx.state = initialState(await $.clock.now())
     ctx.snoozed = null
     ctx.paused = (await $.store.get(PAUSED_KEY)) === true
+    await loadSettings($, ctx)
     // https://no-color.org: set to anything but the empty string, no colour.
     try {
       ctx.plain = ((await $.env.get('NO_COLOR')) ?? '') !== ''
@@ -230,8 +304,8 @@ export const register: Register = (on, options) => {
     try {
       await $.command.register({
         name: COMMAND,
-        description: 'Take a movement break now; off/on pauses or resumes the reminders',
-        argumentHint: '[off|on]',
+        description: 'Take a movement break now; off/on pauses the reminders; config, moves, set and reset change the settings',
+        argumentHint: '[off|on|config|moves|set <key> <value>|reset [key]]',
         immediate: true,
       })
     } catch {
@@ -241,7 +315,10 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: COMMAND }, async ($, e) => ({ text: await runCommand($, ctx, e.args ?? '') }))
+  on('command.run', { command: COMMAND }, async ($, e) => ({ text: await runCommand($, ctx, e.args ?? '') })).catch(
+    // A store write that failed (or ran out of time): say so, not a silent no-op.
+    () => ({ text: 'Could not run /break just now; nothing was changed. Try again.' }),
+  )
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {

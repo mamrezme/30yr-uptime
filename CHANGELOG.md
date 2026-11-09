@@ -2,6 +2,14 @@
 
 All notable changes to 30yr-uptime. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Installing no longer reports "18 userConfig options not yet set" or asks for configuration: the settings moved out of the manifest's `userConfig` (and so out of `/config`) into the mod's own store. Defaults, ranges and per-move toggles are unchanged.
+- Settings are changed with `/break set <key> <value>` and listed with `/break config` and `/break moves`; `/break reset [key]` restores defaults. A change applies at once and no longer reloads the mod or drops a snoozed break.
+- Values set in `/config` for 0.1.0 are not carried over.
+
 ## [0.1.0] - 2026-11-09
 
 The first release.
