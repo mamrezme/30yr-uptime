@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { ACTIVITIES } from '../hooks/activities'
-import { ROWS } from '../hooks/scenes'
+import { DEFAULT, ROWS } from '../hooks/scenes'
 import { MOVES } from '../hooks/settings'
 
 const BAND = {
@@ -12,9 +12,9 @@ const BAND = {
   props: {
     hasSurvey: false,
     isWorking: true,
-    maxRows: 10,
+    maxRows: 20, // a 40-row terminal: the band gets half
     bodyColumns: 80,
-    scroll: { offset: 0, bodyRows: 9 },
+    scroll: { offset: 0, bodyRows: 19 },
     view: {},
   },
 } as const
@@ -26,10 +26,16 @@ const TITLES: readonly (string | undefined)[] = ACTIVITIES.map(a => a.title)
 const isBreak = (title: string | undefined) => TITLES.includes(title)
 
 /** The engine beneath the plugin: a mocked clock, an in-memory store and plain answers. */
-function engine(on: On, stored?: Record<string, unknown>) {
+function engine(on: On, stored?: Record<string, unknown>, env?: Record<string, string>) {
   const clock = mock.clock(on)
   mock.store(on, stored)
-  return withEngine(on, clock)
+  return withEngine(on, clock, env)
+}
+
+/** The cells of a Raster, as [codePoint, fg, bg] triplets. */
+function cellsOf(base64: string): Uint32Array {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+  return new Uint32Array(bytes.buffer)
 }
 
 /** A store the test reads back: what the mod wrote under each key, in order. */
@@ -51,7 +57,8 @@ function engineWithStore(on: On, stored: Record<string, unknown>) {
   return { clock: withEngine(on, clock), writes }
 }
 
-function withEngine(on: On, clock: ReturnType<typeof mock.clock>) {
+function withEngine(on: On, clock: ReturnType<typeof mock.clock>, env: Record<string, string> = {}) {
+  mock.env(on, env)
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
@@ -298,6 +305,11 @@ test('while Claude is idle, the scene plays in the band, and Done and Skip still
   await ui.unmount()
   expect(await bandTitle($, 'terminal')).toBe('engine')
 
+  // Too short a band (a terminal under ~24 rows): the words alone.
+  ui = await $.ui.mount({ ...idle, props: { ...idle.props, maxRows: 10 }, surface: 'terminal' })
+  expect(await ui.find({ type: 'Raster' })).toBe(undefined)
+  await ui.unmount()
+
   // Too narrow a band: the words alone.
   await clock.advance(30 * 60_000)
   const narrow = { ...idle, props: { ...idle.props, bodyColumns: 40 } }
@@ -516,3 +528,27 @@ test('/break with anything else prints the usage and shows nothing', async ($, o
   expect(await runBreak($, 'stats')).toContain('Usage: /break')
   expect(await bandTitle($, 'terminal')).toBe('engine')
 })
+
+for (const [name, env, plain] of [
+  ['NO_COLOR=1: the scene is drawn in the terminal\'s own colour, half blocks still lit', { NO_COLOR: '1' }, true],
+  ['no NO_COLOR: the scene is drawn in colour', {}, false],
+  ['NO_COLOR empty: still in colour (no-color.org: only a non-empty value counts)', { NO_COLOR: '' }, false],
+] as const) {
+  test(name, async ($, on) => {
+    const clock = engine(on, undefined, env)
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    await clock.advance(30 * 60_000)
+    const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, isWorking: false }, surface: 'terminal' })
+    const raster = await ui.find({ type: 'Raster', key: 'scene' })
+    const cells = cellsOf(String(raster?.props.cells))
+    const colours = new Set<number>()
+    let blocks = 0
+    for (let i = 0; i < cells.length; i += 3) {
+      colours.add(cells[i + 1]!).add(cells[i + 2]!)
+      if (cells[i]! >= 0x2580 && cells[i]! <= 0x2588) blocks++
+    }
+    expect(blocks).toBeGreaterThan(20)
+    expect([...colours].every(c => c === DEFAULT)).toBe(plain)
+    await ui.unmount()
+  })
+}
