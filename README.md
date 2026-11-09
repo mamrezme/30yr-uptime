@@ -68,16 +68,46 @@ Changing a setting reloads the mod: a break on show stays, but a snoozed one is 
 ## Install
 
 ```
-/plugin install 30yr-uptime --marketplace mamrezme/30yr-uptime
+/plugin marketplace add https://github.com/mamrezme/30yr-uptime.git
+/plugin install 30yr-uptime@30yr-uptime
 ```
 
-## Development
+Then `/reload-plugins` (or restart Claude Code). The HTTPS link works with or without SSH keys for GitHub; the short form `mamrezme/30yr-uptime` may try SSH first. Or run it from a clone without installing:
+
+```sh
+git clone https://github.com/mamrezme/30yr-uptime.git
+claude --plugin-dir ./30yr-uptime
+```
+
+To update: `/plugin marketplace update 30yr-uptime`, then `/plugin update 30yr-uptime@30yr-uptime`. To remove it: `/plugin uninstall 30yr-uptime@30yr-uptime`.
+
+Needs Claude Code 2.1.287 or newer (mods are on by default from there); tested on 2.1.319. The animation needs a terminal at least 54 columns wide; narrower, the break shows as words and buttons only.
+
+## What the hooks do
+
+`hooks/register.tsx` hooks six events. It reads them and draws; it never changes what Claude sees or sends:
+
+- `session.start`: reads whether you turned reminders off, checks `NO_COLOR`, registers `/break`, and in an interactive session starts a 5-second timer that decides when a break is due.
+- `command.run` for `/break`: starts a break now, or turns the reminders off or on and remembers that choice.
+- `turn.start`: notes when Claude's main turn began, so a long turn can be spotted (a subagent's turn doesn't count).
+- `turn.complete`: notes that the main turn ended and takes the scene off the spinner.
+- `ui.render` on `Spinner`: while a break is on show and Claude works, draws its scene above the spinner line and leaves the spinner as it is. Below 54 columns, or outside the terminal, it hands the spinner back unchanged.
+- `ui.render` on `AbovePrompt`: shows the break's words and the Done, In 5 min and Skip buttons, with the scene above them while Claude is idle.
+
+While a scene is on screen, a timer repaints it about 12 times a second; it stops as soon as the break is answered.
+
+## Privacy: what data it sends
+
+None. The mod makes no network requests and no model calls, so it uses none of your tokens. It doesn't read your prompts, Claude's replies, your files or your code: it only sees when a turn starts and ends, the terminal size, and `NO_COLOR`. Every line of text is written into the mod; none is generated. It stores one thing, whether you ran `/break off` (`paused`, in Claude Code's own plugin store), and keeps no record of the breaks you took or skipped. There is no server, so there is no privacy policy to link.
+
+## Develop
 
 ```sh
 claude plugin validate .   # manifest and hooks module, as the engine reads them
 claude plugin test .       # tests/*.test.ts(x)
 npx -p typescript tsc -p . # type-check (needs .claude-plugin/types/, written when the engine loads the mod)
 bun scripts/preview.ts assets/preview.png assets/preview.gif   # redraw the preview images
+bun scripts/icon.ts icon.png                                   # redraw the icon
 ```
 
 `bun scripts/preview.ts out.png - squat eyes` draws a PNG of just those breaks (`-` skips the GIF); `npx tsx scripts/preview.ts` works too. The script needs no packages: its bitmap font (`scripts/font.ts`), PNG and GIF encoders are in the repo.
@@ -89,3 +119,5 @@ bun scripts/preview.ts assets/preview.png assets/preview.gif   # redraw the prev
 The character is an unofficial fan take on Clawd, Claude Code's character; Clawd is Anthropic's character, and this mod is not made or endorsed by Anthropic.
 
 The animation follows the approach of [clawd-spinner](https://github.com/saiharsha03/clawd-spinner) (MIT): a scene drawn above the spinner line in half-block pixels, two to a cell, repainted in place about 12 times a second while a turn runs, with the stock spinner kept below 54 columns, and a script that draws the scenes to a contact sheet. The character, poses, scenes, font and GIF encoder here are our own; no drawing was copied. The PNG writer in `scripts/preview.ts` follows the shape of the one in clawd-spinner's `scripts/preview.ts`.
+
+MIT licensed: see [LICENSE](LICENSE). Changes are in [CHANGELOG.md](CHANGELOG.md).
