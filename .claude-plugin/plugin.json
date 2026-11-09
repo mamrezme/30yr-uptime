@@ -1,8 +1,15 @@
 {
   "name": "30yr-uptime",
+  "displayName": "30yr-uptime",
   "version": "0.1.0",
   "license": "MIT",
   "description": "While Claude works, reminds you to stand up, drink water, stretch your neck, back, hips and legs, breathe, and do squats or lunges.",
+  "author": {
+    "name": "mamrez"
+  },
+  "homepage": "https://github.com/mamrezme/30yr-uptime",
+  "repository": "https://github.com/mamrezme/30yr-uptime",
+  "icon": "./icon.png",
   "types": "./types/index.d.ts",
   "userConfig": {
     "waitSeconds": {

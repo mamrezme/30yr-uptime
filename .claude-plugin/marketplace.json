@@ -3,6 +3,7 @@
   "owner": {
     "name": "mamrez"
   },
+  "description": "30yr-uptime: movement breaks for the time you spend waiting on Claude.",
   "plugins": [
     {
       "name": "30yr-uptime",
