@@ -42,6 +42,8 @@ type Context = {
   showing: Activity | null
   /** `/break off`: no reminders until `/break on`, kept in `$.store`. */
   paused: boolean
+  /** NO_COLOR is set: scenes are drawn in the terminal's own colour, lit blocks only. */
+  plain: boolean
 }
 
 function stopFrames(ctx: Context) {
@@ -64,7 +66,7 @@ async function paint($: EngineInterface, ctx: Context) {
   }
   const t = (await $.clock.now()) - ctx.shownAt
   for (const m of [...ctx.mounts.values()]) {
-    const cells = encode(drawScene(scene, t, m.width))
+    const cells = encode(drawScene(scene, t, m.width, ctx.plain))
     if (cells === m.last) continue
     m.last = cells
     const r = await $.ui.blit({ requestId: m.requestId, key: SCENE_KEY, cells })
@@ -183,7 +185,7 @@ async function sceneFor(
     ctx.showing = activity
     ctx.shownAt = now
   }
-  const cells = encode(drawScene(activity.scene, now - ctx.shownAt, width))
+  const cells = encode(drawScene(activity.scene, now - ctx.shownAt, width, ctx.plain))
   ctx.mounts.set(requestId, { requestId, width, site, last: cells })
   startFrames($, ctx)
   return cells
@@ -202,6 +204,7 @@ export const register: Register = (on, options) => {
     mounts: new Map(),
     showing: null,
     paused: false,
+    plain: false,
   }
 
   on('session.start', async ($, e, next) => {
@@ -213,6 +216,12 @@ export const register: Register = (on, options) => {
     ctx.state = initialState(await $.clock.now())
     ctx.snoozed = null
     ctx.paused = (await $.store.get(PAUSED_KEY)) === true
+    // https://no-color.org: set to anything but the empty string, no colour.
+    try {
+      ctx.plain = ((await $.env.get('NO_COLOR')) ?? '') !== ''
+    } catch {
+      ctx.plain = false
+    }
 
     if (e.isInteractive) {
       ctx.ticker = $.clock.every(TICK_MS, () => tick($, ctx))

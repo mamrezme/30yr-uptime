@@ -12,7 +12,7 @@ import { writeFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 
 import { ACTIVITIES, describe } from '../hooks/activities'
-import { BODY, DEFAULT, drawScene, FLOOR, GOOD, PROP, ROWS, SCENE_IDS, WATER } from '../hooks/scenes'
+import { BODY, DEFAULT, drawScene, FLOOR, ROWS, SCENE_IDS } from '../hooks/scenes'
 import type { SceneId } from '../hooks/scenes'
 import { CELL_H, CELL_W, glyph } from './font'
 
@@ -21,7 +21,7 @@ const FG = 0xd4d4d4
 const DIM = 0x8a8a8a
 const SCALE = 2
 
-type Cell = { ch: string; fg: number }
+type Cell = { ch: string; fg: number; bg?: number }
 type Screen = Cell[][]
 
 const fg = (c: number) => (c === DEFAULT ? FG : c)
@@ -33,10 +33,15 @@ function textRow(width: number, parts: Array<[string, number]>): Cell[] {
   return row.slice(0, width)
 }
 
-function sceneRows(id: SceneId, t: number, width: number): Cell[][] {
-  const f = drawScene(id, t, width)
-  return f.chars.map((row, r) => row.map((ch, x) => ({ ch, fg: fg(f.colors[r]![x]!) })))
+function sceneRows(id: SceneId, t: number, width: number, plain = false): Cell[][] {
+  const f = drawScene(id, t, width, plain)
+  return f.chars.map((row, r) =>
+    row.map((ch, x) => ({ ch, fg: fg(f.fg[r]![x]!), bg: f.bg[r]![x]! === DEFAULT ? BG : f.bg[r]![x]! })),
+  )
 }
+
+/** The half-block characters: which halves of the cell are the foreground. */
+const HALVES: Record<string, [boolean, boolean]> = { '\u2580': [true, false], '\u2584': [false, true], '\u2588': [true, true] }
 
 /** Pixels (0xRRGGBB) of a screen, `pad` cells of margin around it. */
 function rasterize(screen: Screen, pad = 1): { w: number; h: number; px: Uint32Array } {
@@ -47,6 +52,17 @@ function rasterize(screen: Screen, pad = 1): { w: number; h: number; px: Uint32A
   screen.forEach((row, r) =>
     row.forEach((cell, c) => {
       if (cell.ch === ' ') return
+      const halves = HALVES[cell.ch]
+      if (halves) {
+        // a pixel cell: each half filled, foreground or background
+        const x0 = (c + pad) * CELL_W * SCALE, y0 = (r + pad) * CELL_H * SCALE
+        const half = (CELL_H * SCALE) / 2
+        for (let j = 0; j < CELL_H * SCALE; j++) {
+          const colour = halves[j < half ? 0 : 1] ? cell.fg : (cell.bg ?? BG)
+          for (let i = 0; i < CELL_W * SCALE; i++) px[(y0 + j) * w + x0 + i] = colour
+        }
+        return
+      }
       for (const [gx, gy] of glyph(cell.ch)) {
         const x0 = ((c + pad) * CELL_W + gx) * SCALE
         const y0 = ((r + pad) * CELL_H + gy) * SCALE
@@ -69,24 +85,24 @@ const MOMENTS: Record<SceneId, number[]> = {
   neck: [500, 1700, 3500, 4800],
   shoulders: [500, 1700, 4500, 6000],
   thoracic: [500, 2000, 4500, 6500],
-  twist: [500, 2000, 16_000, 31_000],
-  wrists: [500, 12_000, 21_000, 31_000],
+  twist: [1200, 6000, 20_000, 31_000],
+  wrists: [4000, 14_000, 24_000, 34_000],
   squat: [300, 1200, 2300, 19_000],
   lunge: [300, 1000, 2700, 3500],
   glutes: [300, 1200, 2300, 21_000],
-  hamstring: [500, 1500, 20_500, 41_000],
-  calf: [500, 1500, 20_500, 41_000],
-  hipflexor: [500, 1500, 20_500, 41_000],
+  hamstring: [400, 5000, 7000, 26_000],
+  calf: [400, 5000, 7000, 26_000],
+  hipflexor: [400, 5000, 7000, 26_000],
 }
 
 function sheet(ids: SceneId[]): Screen {
-  const W = 46, LABEL = 24, GAP = 2
+  const W = 52, LABEL = 24, GAP = 2
   const screen: Screen = []
   for (const id of ids) {
     const title = ACTIVITIES.find(a => a.scene === id)?.title ?? id
     const frames = MOMENTS[id].map(t => sceneRows(id, t, W))
     for (let r = 0; r < ROWS; r++) {
-      const row = textRow(LABEL, r === 2 ? [[title, FG]] : [])
+      const row = textRow(LABEL, r === Math.floor(ROWS / 2) ? [[title, FG]] : [])
       for (const f of frames) row.push(...textRow(GAP, []), ...f[r]!)
       screen.push(row)
     }
@@ -226,8 +242,7 @@ export function png({ w, h, px }: { w: number; h: number; px: Uint32Array }): Bu
 
 // --- GIF ------------------------------------------------------------------
 
-const PALETTE = [BG, FG, DIM, BODY, PROP, WATER, FLOOR, GOOD]
-const MIN_CODE = 4 // a 16-colour table
+const MIN_CODE = 8 // a 256-colour table, made from the colours the frames use
 
 /** LZW, as GIF wants it: variable-width codes packed LSB first. */
 export function lzw(indices: Uint8Array, minCode = MIN_CODE): number[] {
@@ -281,13 +296,15 @@ export function gif(images: Array<{ w: number; h: number; px: Uint32Array }>, de
   out.push(...Buffer.from('GIF89a'))
   u16(w)
   u16(h)
+  const palette = [...new Set(images.flatMap(img => [...new Set(img.px)]))]
+  if (palette.length > 1 << MIN_CODE) throw new Error(`${palette.length} colours: more than a GIF table holds`)
   out.push(0xf0 | (MIN_CODE - 1), 0, 0) // global table of 2^MIN_CODE colours
   for (let i = 0; i < 1 << MIN_CODE; i++) {
-    const c = PALETTE[i] ?? 0
+    const c = palette[i] ?? 0
     out.push((c >> 16) & 255, (c >> 8) & 255, c & 255)
   }
   out.push(0x21, 0xff, 11, ...Buffer.from('NETSCAPE2.0'), 3, 1, 0, 0, 0) // loop forever
-  const index = new Map(PALETTE.map((c, i) => [c, i]))
+  const index = new Map(palette.map((c, i) => [c, i]))
   for (const img of images) {
     out.push(0x21, 0xf9, 4, 0)
     u16(Math.round(delayMs / 10))

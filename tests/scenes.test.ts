@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { ACTIVITIES } from '../hooks/activities'
 import {
+  BODY,
   BOX_MS,
   DEFAULT,
   hasScene,
@@ -29,22 +30,55 @@ test('every break has its own scene, and every scene a break', () => {
   expect(ACTIVITIES.map(a => a.scene)).toEqual([...SCENE_IDS])
 })
 
-test('every frame is ROWS rows of exactly the width, printable ASCII, valid colours', () => {
+/** Half blocks for the pixels, and the progress bar's two lines. */
+const DRAWN = new Set(['\u2580', '\u2584', '\u2588', '\u2501', '\u2500'])
+const okChar = (ch: string) => ch.length === 1 && ((ch >= ' ' && ch <= '~') || DRAWN.has(ch))
+const okColour = (c: number) => c === DEFAULT || (c >= 0 && c <= 0xffffff)
+
+test('every frame is ROWS rows of exactly the width, half blocks or printable ASCII, valid colours', () => {
   for (const id of SCENE_IDS) {
     for (const width of WIDTHS) {
       for (const t of TIMES) {
         const f = drawScene(id, t, width)
         expect(f.chars).toHaveLength(ROWS)
-        expect(f.colors).toHaveLength(ROWS)
+        expect(f.fg).toHaveLength(ROWS)
+        expect(f.bg).toHaveLength(ROWS)
         for (let r = 0; r < ROWS; r++) {
           expect(f.chars[r]).toHaveLength(width)
-          expect(f.colors[r]).toHaveLength(width)
-          expect(f.chars[r]!.every(ch => ch.length === 1 && ch >= ' ' && ch <= '~')).toBe(true)
-          expect(f.colors[r]!.every(c => c === DEFAULT || (c >= 0 && c <= 0xffffff))).toBe(true)
+          expect(f.fg[r]).toHaveLength(width)
+          expect(f.bg[r]).toHaveLength(width)
+          expect(f.chars[r]!.every(okChar)).toBe(true)
+          expect(f.fg[r]!.every(okColour)).toBe(true)
+          expect(f.bg[r]!.every(okColour)).toBe(true)
         }
       }
     }
   }
+})
+
+test('every scene draws the character in half-block pixels', () => {
+  for (const id of SCENE_IDS) {
+    const f = drawScene(id, 1500, 80)
+    expect(f.fg.flat().filter(c => c === BODY).length).toBeGreaterThan(20)
+    expect(toLines(f).join('').match(/[\u2580\u2584\u2588]/g)?.length ?? 0).toBeGreaterThan(20)
+  }
+})
+
+test('NO_COLOR: every cell in the terminal colour, the figure still drawn, the eyes left as holes', () => {
+  for (const id of SCENE_IDS) {
+    for (const t of [0, 1500, 7000]) {
+      const plain = drawScene(id, t, 80, true)
+      expect(plain.fg.flat().every(c => c === DEFAULT)).toBe(true)
+      expect(plain.bg.flat().every(c => c === DEFAULT)).toBe(true)
+      // the words are the same as in colour
+      const words = (f: ReturnType<typeof drawScene>) => toLines(f).join('\n').replace(/[\u2580\u2584\u2588\u2501\u2500]/g, ' ')
+      expect(words(plain)).toBe(words(drawScene(id, t, 80)))
+    }
+  }
+  // the eyes: the face in colour has dark pixels; plain, those are unlit
+  const colour = toLines(drawScene('eyes', 0, 80)).join('')
+  const plain = toLines(drawScene('eyes', 0, 80, true)).join('')
+  expect(plain).not.toBe(colour)
 })
 
 test('every scene moves: frames differ over a few seconds', () => {
@@ -91,10 +125,12 @@ test('the glass empties sip by sip', () => {
   expect(text('water', 9_000)).toContain('3/3 sips')
 })
 
-test('the walker crosses the scene', () => {
-  const column = (t: number) => toLines(drawScene('walk', t, 80))[1]!.indexOf('O')
-  expect(column(0)).toBeGreaterThanOrEqual(0)
-  expect(column(2_000)).toBeGreaterThan(column(0))
+test('the walker walks on and counts steps', () => {
+  // it walks in place while the ground goes by under it, counting steps
+  const ground = (t: number) => toLines(drawScene('walk', t, 80))[ROWS - 1]
+  expect(ground(0)).not.toBe(ground(700))
+  expect(text('walk', 0)).toContain('0 steps')
+  expect(text('walk', 4_500)).toContain('10 steps')
 })
 
 test('too narrow for a scene: none; wide: capped', () => {
@@ -111,10 +147,18 @@ test('encode packs width x ROWS cells of [codePoint, fg, bg]', () => {
   const bytes = Uint8Array.from(atob(encode(f)), c => c.charCodeAt(0))
   const cells = new Uint32Array(bytes.buffer)
   expect(cells.length).toBe(60 * ROWS * 3)
-  const row = 2, x = toLines(f)[row]!.indexOf('s')
+  const row = 3, x = toLines(f)[row]!.indexOf('s')
   const i = (row * 60 + x) * 3
   expect(cells[i]).toBe('s'.codePointAt(0))
   expect(cells[i + 2]).toBe(DEFAULT)
+  // a pixel cell: its character, the top colour and the bottom one
+  const lines = toLines(f)
+  const r = lines.findIndex(l => l.includes('\u2580') || l.includes('\u2588'))
+  const px = lines[r]!.search(/[\u2580\u2588]/)
+  const j = (r * 60 + px) * 3
+  expect(cells[j]).toBe(f.chars[r]![px]!.codePointAt(0))
+  expect(cells[j + 1]).toBe(f.fg[r]![px])
+  expect(cells[j + 2]).toBe(f.bg[r]![px])
 })
 
 test('hasScene: only the scenes this version draws; an unknown one draws an empty floor', () => {
@@ -165,10 +209,13 @@ test('two-sided holds show both sides with a countdown, then done', () => {
   expect(text('twist', 0)).toContain('twist left  15s')
   expect(text('twist', TWIST_MS)).toContain('twist right 15s')
   expect(text('twist', TWIST_MS * 2)).toContain('done!')
-  expect(text('wrists', 0)).toContain('right fingers up 10s')
-  expect(text('wrists', WRIST_MS)).toContain('right fingers down 10s')
-  expect(text('wrists', WRIST_MS * 2)).toContain('left fingers up 10s')
-  expect(text('wrists', WRIST_MS * 3 + 9_500)).toContain('left fingers down 1s')
+  expect(text('wrists', 0)).toContain('fingers up 10s')
+  expect(text('wrists', 0)).toContain('right hand')
+  expect(text('wrists', WRIST_MS)).toContain('fingers down 10s')
+  expect(text('wrists', WRIST_MS)).toContain('right hand')
+  expect(text('wrists', WRIST_MS * 2)).toContain('fingers up 10s')
+  expect(text('wrists', WRIST_MS * 2)).toContain('left hand')
+  expect(text('wrists', WRIST_MS * 3 + 9_500)).toContain('fingers down 1s')
   expect(text('wrists', WRIST_MS * 4)).toContain('done!')
   for (const [id, label] of [['hamstring', 'leg'], ['calf', 'heel down'], ['hipflexor', 'leg back']] as const) {
     expect(text(id, 0)).toContain(`left  ${label} 20s`)
