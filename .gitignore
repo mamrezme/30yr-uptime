@@ -1,0 +1,6 @@
+# Written by the Claude Code engine when it loads the mod.
+.claude-plugin/types/
+node_modules/
+.DS_Store
+*.log
+scripts/launch/fonts/
