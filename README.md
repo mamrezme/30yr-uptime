@@ -1,6 +1,8 @@
 # 30yr-uptime
 
-A Claude Code mod that turns the time you spend waiting on Claude into short movement breaks. When a turn runs longer than 15 seconds, or every 30 minutes, a break shows above the prompt: something for your neck, shoulders, back, hips, legs, wrists, eyes or lungs, acted out by a little pixel character. Press **Done**, **In 5 min** or **Skip**. It all happens in the terminal and runs locally: no network, no model calls, no tokens.
+A Claude Code mod that turns the time you spend waiting on Claude into short movement breaks. Every 45 minutes, the next time a turn runs longer than 15 seconds, a break shows above the prompt: something for your neck, shoulders, back, hips, legs, wrists, eyes or lungs, acted out by a little pixel character. Press **Done**, **In 5 min** or **Skip**. It all happens in the terminal and runs locally: no network, no model calls, no tokens.
+
+![A break showing up while Claude works, then /break](assets/launch/demo.gif)
 
 > **Chin tucks** 10 reps: slide your head straight back, hold for 2 seconds. Resets your neck over your spine. Skip it and your head keeps drifting toward the monitor.
 
@@ -74,7 +76,7 @@ Installing asks nothing: every setting has a default and the mod works as it is.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `waitSeconds` | 15 | How long a turn must run before a break is suggested. 1 to 3600. |
-| `intervalMinutes` | 30 | Also remind you this often, even when Claude is idle. 1 to 1440; 0 turns interval reminders off. |
+| `intervalMinutes` | 45 | The shortest time between two breaks, counted from the session start for the first one: a break waits until this long has passed and a turn runs past `waitSeconds`. Never while Claude is idle. 1 to 1440; 0 gives every long turn a break. |
 | one key per move (see [the moves](#the-moves)) | on | Whether that move can be suggested. |
 
 Turn off the moves you can't or don't want to do (`/break set squat off`); with every move off, no breaks are shown. `/break set` refuses a value that is not a number (or a negative one) and a move value other than on or off (`on`/`off`, `true`/`false`, `yes`/`no`, `1`/`0`), and clamps a number to its range. Changing a setting keeps the break on show and a snoozed one.
