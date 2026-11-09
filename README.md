@@ -81,7 +81,7 @@ Installing asks nothing: every setting has a default and the mod works as it is.
 
 Turn off the moves you can't or don't want to do (`/break set squat off`); with every move off, no breaks are shown. `/break set` refuses a value that is not a number (or a negative one) and a move value other than on or off (`on`/`off`, `true`/`false`, `yes`/`no`, `1`/`0`), and clamps a number to its range. Changing a setting keeps the break on show and a snoozed one.
 
-The settings are not in `/config`: Claude Code counts every `/config` option of a plugin as "not yet set" after install, even one with a default, and asks you to configure it. Values set in `/config` for 0.1.0 are not carried over; set them again with `/break set`.
+The settings are not in `/config`: Claude Code counts every `/config` option of a plugin as "not yet set" after install, even one with a default, and asks you to configure it.
 
 ## What the hooks do
 
