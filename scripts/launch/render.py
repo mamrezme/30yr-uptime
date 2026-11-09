@@ -313,7 +313,7 @@ def stills():
     im = backdrop(W, H)
     d = ImageDraw.Draw(im)
     centered(d, 'How it works', 40, F(INTER_XB, 46), CREAM)
-    items = [('15s', 'A turn runs past 15s, or 30 min pass: a break shows up.'),
+    items = [('45 min', 'Every 45 min, once a turn runs past 15s: a break shows up.'),
              ('/break', 'Want one now? /break. Need focus? /break off.'),
              ('Done', 'Done, In 5 min, or Skip. No streaks, no guilt, no stats.'),
              ('/break set', 'Pick your moves and timings: /break set squat off'),

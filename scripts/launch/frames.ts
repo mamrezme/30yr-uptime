@@ -107,7 +107,7 @@ function state(t: number): State {
   const clock = (x: number) => Math.floor(x < 9 ? (x - 2.6) * 2.2 : x < 16.4 ? 15 + (x - 9) * 1.2 : 24 + (x - 16.4) * 1.5)
   if (t < 19.4) {
     s.working = { word: t < 9 ? 'Pondering' : t < 16.4 ? 'Refactoring' : 'Testing', secs: Math.max(0, clock(t)) }
-    s.cap = t < 9 ? '…and sit there. Like you will for the next 30 years.' : t < 12.5 ? '15 seconds in, a break shows up above the spinner' : t < 16.4 ? 'Do the move, press Done. Claude never stopped working.' : 'Claude keeps going.'
+    s.cap = t < 9 ? '…and sit there. Like you will for the next 30 years.' : t < 12.5 ? 'Every 45 min, once a turn passes 15s, a break shows up' : t < 16.4 ? 'Do the move, press Done. Claude never stopped working.' : 'Claude keeps going.'
     if (t >= BREAK1[0] && t < BREAK1[1]) s.scene = { id: 'neck', t: (t - BREAK1[0]) * 1000, press: t >= PRESS1 ? 'done' : null }
     for (const [at, rows] of STEPS2) if (t >= at) s.transcript.push(...rows)
     return s

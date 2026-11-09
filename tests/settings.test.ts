@@ -33,7 +33,7 @@ test('waitSeconds: numeric strings are read, out-of-range values are clamped', (
   expect(readWaitSeconds(10_000_000)).toBe(3600)
 })
 
-test('intervalMinutes: 0 turns it off, valid numbers pass through', () => {
+test('intervalMinutes: 0 (every long turn) and valid numbers pass through', () => {
   expect(readIntervalMinutes(0)).toBe(0)
   expect(readIntervalMinutes('0')).toBe(0)
   expect(readIntervalMinutes(30)).toBe(30)
@@ -56,14 +56,14 @@ const timing = (o: Parameters<typeof readSettings>[0]) => {
   return { waitMs, intervalMs }
 }
 
-test('the defaults: 15 seconds, 30 minutes', () => {
+test('the defaults: 15 seconds, 45 minutes', () => {
   expect(DEFAULT_WAIT_SECONDS).toBe(15)
-  expect(DEFAULT_INTERVAL_MINUTES).toBe(30)
+  expect(DEFAULT_INTERVAL_MINUTES).toBe(45)
 })
 
 test('readSettings converts to milliseconds', () => {
   expect(timing({ waitSeconds: 20, intervalMinutes: 45 })).toEqual({ waitMs: 20_000, intervalMs: 2_700_000 })
-  expect(timing({})).toEqual({ waitMs: 15_000, intervalMs: 1_800_000 })
+  expect(timing({})).toEqual({ waitMs: 15_000, intervalMs: 2_700_000 })
   expect(timing({ waitSeconds: 'x', intervalMinutes: 0 })).toEqual({ waitMs: 15_000, intervalMs: 0 })
 })
 

@@ -5,13 +5,13 @@ import { SCENE_IDS } from './scenes'
 export const DEFAULT_WAIT_SECONDS = 15
 export const MAX_WAIT_SECONDS = 60 * 60
 
-export const DEFAULT_INTERVAL_MINUTES = 30
+export const DEFAULT_INTERVAL_MINUTES = 45
 export const MAX_INTERVAL_MINUTES = 24 * 60
 
 export type Settings = {
   /** How long a main-loop turn must run before a break is suggested. */
   waitMs: number
-  /** How often to remind regardless of turns; 0 means off. */
+  /** The shortest time between two breaks; 0 means every long turn gets one. */
   intervalMs: number
   /** The moves a break may suggest, each turned on or off with /break set. */
   enabled: ReadonlySet<SceneId>
@@ -47,7 +47,8 @@ export function readWaitSeconds(value: unknown): number {
 }
 
 /**
- * `intervalMinutes`: 0 turns interval reminders off; otherwise at least 1
+ * `intervalMinutes`: the shortest time between two breaks. 0 means no gap
+ * (every turn longer than `waitSeconds` gets a break); otherwise at least 1
  * minute and at most a day. Unset, non-numeric, NaN or negative falls back
  * to the default.
  */
@@ -119,7 +120,7 @@ export function parseSetting(key: SettingKey, typed: string): { value: number | 
         error:
           key === 'waitSeconds'
             ? 'waitSeconds takes a number of seconds, 1 to 3600.'
-            : 'intervalMinutes takes a number of minutes, 1 to 1440, or 0 for off.',
+            : 'intervalMinutes takes a number of minutes, 1 to 1440, or 0 for a break on every long turn.',
       }
     }
     return { value: key === 'waitSeconds' ? readWaitSeconds(n) : readIntervalMinutes(n) }
@@ -144,7 +145,7 @@ export function describeSettings(settings: Settings): string {
   return [
     'Settings:',
     `waitSeconds      ${wait}${wait === DEFAULT_WAIT_SECONDS ? ' (default)' : ''}`,
-    `intervalMinutes  ${interval === 0 ? '0 (off)' : interval}${interval === DEFAULT_INTERVAL_MINUTES ? ' (default)' : ''}`,
+    `intervalMinutes  ${interval === 0 ? '0 (every long turn)' : interval}${interval === DEFAULT_INTERVAL_MINUTES ? ' (default)' : ''}`,
     `moves            ${settings.enabled.size} of ${MOVES.length} on (/break moves lists them)`,
     '',
     'Change one: /break set waitSeconds 30, /break set squat off. Undo: /break reset [key].',
