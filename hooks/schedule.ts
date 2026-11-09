@@ -4,7 +4,7 @@ import type { Settings } from './settings'
 export const SNOOZE_MS = 5 * 60_000
 
 export type ScheduleState = {
-  /** When the session started. */
+  /** When the session started: the first break's interval counts from here. */
   startedAt: number
   /** When the last break was shown or handled (Done/Skip); null before any. */
   lastNudgeAt: number | null
@@ -23,9 +23,9 @@ export function initialState(now: number): ScheduleState {
 /**
  * Whether to show a break now, and why. A break comes only while Claude is
  * working: once a turn has run `waitMs`, and only when at least `intervalMs`
- * has passed since the last break. The first long turn of a session gets one
- * straight away; after that there is one break per interval at most, and none
- * while Claude is idle. Never while
+ * has passed since the last break, or since the session started for the
+ * first one. So there is one break per interval at most, and none while
+ * Claude is idle. Never while
  * a break is still showing: the person has not pressed Done or Skip yet, and
  * replacing it would lose it.
  */
@@ -43,8 +43,8 @@ export function decide(
 
   const { turn } = state
   if (turn === null || turn.nudged || now - turn.since < settings.waitMs) return null
-  const { lastNudgeAt } = state
-  return lastNudgeAt === null || now - lastNudgeAt >= settings.intervalMs ? 'turn' : null
+  const since = state.lastNudgeAt ?? state.startedAt
+  return now - since >= settings.intervalMs ? 'turn' : null
 }
 
 /** The state after a break was shown at `now`. */

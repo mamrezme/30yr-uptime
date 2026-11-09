@@ -110,6 +110,7 @@ test('a long turn shows a break in the band, with no toast', async ($, on) => {
   })
 
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   for (const surface of SURFACES) expect(await bandTitle($, surface)).toBe('engine')
 
   await startTurn($, 't1')
@@ -122,6 +123,7 @@ test('a long turn shows a break in the band, with no toast', async ($, on) => {
 test('a subagent ending does not end the main turn', async ($, on) => {
   const clock = engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
 
   await startTurn($, 'main')
   await clock.advance(5_000)
@@ -135,6 +137,7 @@ test('a subagent ending does not end the main turn', async ($, on) => {
 test('a pending break is not replaced, and Skip restarts the wait', async ($, on) => {
   const clock = engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
 
   // First break: the session's first long turn.
   await startTurn($, 't1')
@@ -163,6 +166,7 @@ test('a pending break is not replaced, and Skip restarts the wait', async ($, on
 test('the band names the move, what it does and what skipping it costs; Done clears it and the next move differs', async ($, on) => {
   const clock = engine(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   await startTurn($, 't1')
   await clock.advance(25_000)
 
@@ -195,6 +199,7 @@ test('the band names the move, what it does and what skipping it costs; Done cle
 test('the default wait is 15 seconds', async ($, on) => {
   const clock = engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   await startTurn($, 't1')
   await clock.advance(10_000)
   expect(await bandTitle($, 'terminal')).toBe('engine')
@@ -228,6 +233,7 @@ test('no reminders in a non-interactive run', async ($, on) => {
 test('invalid settings fall back to defaults instead of disabling nudges', async ($, on) => {
   const clock = engine(on, { settings: { waitSeconds: -3 } })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   await startTurn($, 't1')
   await clock.advance(25_000)
   expect(isBreak(await bandTitle($, 'terminal'))).toBe(true)
@@ -243,6 +249,7 @@ const SPINNER = {
 async function breakDuringTurn($: Engine, on: On, stored?: Record<string, unknown>) {
   const clock = engine(on, stored)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   await startTurn($, 't1')
   await clock.advance(25_000)
   return clock
@@ -308,6 +315,7 @@ test('no scene, the stock spinner: narrow terminal, desktop, or no break', async
 test('while Claude is idle, the scene plays in the band, and Done and Skip still work', async ($, on) => {
   const clock = engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   // A break from a long turn, left on show after the turn ends.
   await startTurn($, 't1')
   await clock.advance(25_000)
@@ -374,6 +382,7 @@ test('Done, Skip and In 5 min keep no record: nothing is written to the store', 
 test('In 5 min hides the break and brings the same one back 5 minutes later', async ($, on) => {
   const clock = engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   await startTurn($, 't1')
   await clock.advance(25_000)
   const first = await bandTitle($, 'terminal')
@@ -580,6 +589,7 @@ test('settings kept by /break set apply from the next session on', async ($, on)
 test('/break set changes a setting at once and keeps it in the store', async ($, on) => {
   const { clock, writes } = engineWithStore(on, {})
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
 
   expect(await runBreak($, 'set waitSeconds 60')).toBe('waitSeconds is now 60.')
   expect(await runBreak($, 'set SQUAT off')).toBe('squat is now off.')
@@ -649,6 +659,7 @@ test('/break set keeps a snoozed break', async ($, on) => {
 test('a stored blob that is not settings is ignored', async ($, on) => {
   const clock = engine(on, { settings: 'garbage' })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(45 * 60_000) // the first break waits one interval from the session start
   await startTurn($, 't1')
   await clock.advance(25_000)
   expect(isBreak(await bandTitle($, 'terminal'))).toBe(true)

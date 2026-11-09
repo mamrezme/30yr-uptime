@@ -14,8 +14,11 @@ import {
 const S = { waitMs: 20_000, intervalMs: 45 * 60_000 }
 const MIN = 60_000
 
+/** A session started one interval ago: its first break is due. */
+const OLD = initialState(-45 * MIN)
+
 test('a long main turn is nudged once, after waitMs', () => {
-  let s = turnStarted(initialState(0), 't1', 0)
+  let s = turnStarted(OLD, 't1', 0)
   expect(decide(s, 19_999, S, false)).toBe(null)
   expect(decide(s, 20_000, S, false)).toBe('turn')
   s = afterNudge(s, 20_000)
@@ -28,9 +31,13 @@ test('nothing is ever shown while Claude is idle', () => {
   expect(decide(afterHandled(afterNudge(s, MIN), 2 * MIN), 10 * 60 * MIN, S, false)).toBe(null)
 })
 
-test('the first long turn of a session gets a break at once', () => {
-  const s = turnStarted(initialState(0), 't1', 10_000)
-  expect(decide(s, 30_000, S, false)).toBe('turn')
+test('the first break also waits for the interval, counted from the session start', () => {
+  let s = turnStarted(initialState(0), 't1', 10_000)
+  expect(decide(s, 30_000, S, false)).toBe(null)
+  s = turnEnded(s, 't1')
+  s = turnStarted(s, 't2', 44 * MIN + 50_000)
+  expect(decide(s, 45 * MIN - 1, S, false)).toBe(null)
+  expect(decide(s, 45 * MIN + 10_000, S, false)).toBe('turn')
 })
 
 test('after a break, long turns get nothing until the interval has passed', () => {

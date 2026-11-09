@@ -13,7 +13,7 @@ All notable changes to 30yr-uptime. The format follows [Keep a Changelog](https:
 - Installing no longer reports "18 userConfig options not yet set" or asks for configuration: the settings moved out of the manifest's `userConfig` (and so out of `/config`) into the mod's own store. Defaults, ranges and per-move toggles are unchanged.
 - Settings are changed with `/break set <key> <value>` and listed with `/break config` and `/break moves`; `/break reset [key]` restores defaults. A change applies at once and no longer reloads the mod or drops a snoozed break.
 - Values set in `/config` for 0.1.0 are not carried over.
-- One break every 45 minutes at most, and only while Claude is working: a break shows when a turn runs past `waitSeconds` (15) and `intervalMinutes` (now 45, was 30) have passed since the last one. The first long turn of a session gets one. No more reminders while Claude is idle; `intervalMinutes 0` now means a break on every long turn instead of turning reminders off.
+- One break every 45 minutes at most, and only while Claude is working: a break shows when a turn runs past `waitSeconds` (15) and `intervalMinutes` (now 45, was 30) have passed since the last one. The first one also waits `intervalMinutes` from the session start. No more reminders while Claude is idle; `intervalMinutes 0` now means a break on every long turn instead of turning reminders off.
 
 ## [0.1.0] - 2026-11-09
 

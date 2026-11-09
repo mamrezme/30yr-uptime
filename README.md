@@ -76,7 +76,7 @@ Installing asks nothing: every setting has a default and the mod works as it is.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `waitSeconds` | 15 | How long a turn must run before a break is suggested. 1 to 3600. |
-| `intervalMinutes` | 45 | The shortest time between two breaks. The first long turn of a session gets one; after that, a break waits until this long has passed and a turn runs past `waitSeconds`. Never while Claude is idle. 1 to 1440; 0 gives every long turn a break. |
+| `intervalMinutes` | 45 | The shortest time between two breaks, counted from the session start for the first one: a break waits until this long has passed and a turn runs past `waitSeconds`. Never while Claude is idle. 1 to 1440; 0 gives every long turn a break. |
 | one key per move (see [the moves](#the-moves)) | on | Whether that move can be suggested. |
 
 Turn off the moves you can't or don't want to do (`/break set squat off`); with every move off, no breaks are shown. `/break set` refuses a value that is not a number (or a negative one) and a move value other than on or off (`on`/`off`, `true`/`false`, `yes`/`no`, `1`/`0`), and clamps a number to its range. Changing a setting keeps the break on show and a snoozed one.
