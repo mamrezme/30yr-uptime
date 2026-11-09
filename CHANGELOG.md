@@ -4,6 +4,10 @@ All notable changes to 30yr-uptime. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+### Added
+
+- Launch assets in `assets/launch/`: a 47-second demo (`demo.mp4`, `demo.gif`, also at the top of the README), the Product Hunt cover and gallery images, and images for X and LinkedIn. `scripts/launch/` rebuilds them from the scene code.
+
 ### Changed
 
 - Installing no longer reports "18 userConfig options not yet set" or asks for configuration: the settings moved out of the manifest's `userConfig` (and so out of `/config`) into the mod's own store. Defaults, ranges and per-move toggles are unchanged.

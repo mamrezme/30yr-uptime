@@ -2,6 +2,8 @@
 
 A Claude Code mod that turns the time you spend waiting on Claude into short movement breaks. When a turn runs longer than 15 seconds, or every 30 minutes, a break shows above the prompt: something for your neck, shoulders, back, hips, legs, wrists, eyes or lungs, acted out by a little pixel character. Press **Done**, **In 5 min** or **Skip**. It all happens in the terminal and runs locally: no network, no model calls, no tokens.
 
+![A break showing up while Claude works, then /break](assets/launch/demo.gif)
+
 > **Chin tucks** 10 reps: slide your head straight back, hold for 2 seconds. Resets your neck over your spine. Skip it and your head keeps drifting toward the monitor.
 
 The character is an unofficial fan take on Clawd, Claude Code's character; this mod is not made or endorsed by Anthropic.
